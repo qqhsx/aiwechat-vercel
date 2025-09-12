@@ -1,0 +1,24 @@
+{
+  "button": [
+    {
+      "type": "click",
+      "name": "切换到GPT",
+      "key": "AI_CHAT_GPT"
+    },
+    {
+      "name": "切换AI模型",
+      "sub_button": [
+        {
+          "type": "click",
+          "name": "星火",
+          "key": "AI_CHAT_SPARK"
+        },
+        {
+          "type": "click",
+          "name": "通义千问",
+          "key": "AI_CHAT_QWEN"
+        }
+      ]
+    }
+  ]
+}
