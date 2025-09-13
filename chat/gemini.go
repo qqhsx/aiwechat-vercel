@@ -37,7 +37,7 @@ func (s *GeminiChat) toDbMsg(msg *genai.Content) db.Msg {
 			// 将图片数据编码为 Base64 字符串
 			encodedData := base64.StdEncoding.EncodeToString(v.Data)
 			// 这里硬编码了MIME类型，因为数据库中没有存储
-			dbMsg.Parts = append(dbMsg.Parts, db.ContentPart{Type: "image", Data: encodedData, MimeType: v.MimeType})
+			dbMsg.Parts = append(dbMsg.Parts, db.ContentPart{Type: "image", Data: encodedData, MIMEType: v.MIMEType})
 		}
 	}
 	return dbMsg
@@ -60,7 +60,7 @@ func (s *GeminiChat) toChatMsg(msg db.Msg) *genai.Content {
 				continue
 			}
 			// 将数据转换为 genai.Blob
-			content.Parts = append(content.Parts, genai.ImageData(part.MimeType, imageData))
+			content.Parts = append(content.Parts, genai.ImageData(part.MIMEType, imageData))
 		}
 	}
 	return content

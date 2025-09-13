@@ -1,336 +1,160 @@
-package db
+package chat
 
 import (
 	"context"
-	"crypto/tls"
-	"errors"
+	"io"
+	"net/http"
+	"encoding/base64"
 	"fmt"
-	"os"
-	"strconv"
-	"strings"
-	"sync"
-	"time"
 
-	"github.com/bytedance/sonic"
-	"github.com/go-redis/redis/v8"
-)
-
-var (
-	ChatDbInstance ChatDb        = nil
-	RedisClient    *redis.Client = nil
-	Cache          sync.Map
+	"github.com/google/generative-ai-go/genai"
+	"github.com/pwh-pwh/aiwechat-vercel/config"
+	"github.com/pwh-pwh/aiwechat-vercel/db"
+	"google.golang.org/api/option"
 )
 
 const (
-	PROMPT_KEY = "prompt"
-	MSG_KEY    = "msg"
-	MODEL_KEY  = "model"
-	TODO_KEY   = "todo"
-	KEYWORD_REPLY_KEY = "keyword"
-	LAST_AI_BOT_KEY = "lastAIBot" // 新增用于存储上次使用的AI模型
+	GeminiUser = "user"
+	GeminiBot  = "model"
 )
 
-type KeywordReply struct {
-    Keyword string `json:"keyword"`
-    Reply   string `json:"reply"`
+type GeminiChat struct {
+	BaseChat
+	key       string
+	maxTokens int
 }
 
-func init() {
-	db, err := GetChatDb()
-	if err != nil {
-		fmt.Println(err)
-		return
+func (s *GeminiChat) toDbMsg(msg *genai.Content) db.Msg {
+	dbMsg := db.Msg{
+		Role: msg.Role,
+		Parts: []db.ContentPart{},
 	}
-	ChatDbInstance = db
-}
-
-// ContentPart represents a part of a message, which can be text or an image.
-type ContentPart struct {
-	Type     string `json:"type"` // "text" or "image"
-	Data     string `json:"data"` // The text content or image URL
-	MimeType string `json:"mime_type,omitempty"` // MIME type for image data
-}
-
-// Msg represents a message in a conversation.
-type Msg struct {
-	Role  string `json:"role"`
-	Parts []ContentPart `json:"parts"`
-}
-
-type ChatDb interface {
-	GetMsgList(botType string, userId string) ([]Msg, error)
-	SetMsgList(botType string, userId string, msgList []Msg)
-}
-
-type RedisChatDb struct {
-	client *redis.Client
-}
-
-func NewRedisChatDb(url string) (*RedisChatDb, error) {
-	options, err := redis.ParseURL(url)
-	if err != nil {
-		fmt.Println(err)
-		return nil, errors.New("redis url error")
-	}
-	options.TLSConfig = &tls.Config{InsecureSkipVerify: true}
-	client := redis.NewClient(options)
-	RedisClient = client
-	return &RedisChatDb{
-		client: client,
-	}, nil
-}
-
-func (r *RedisChatDb) GetMsgList(botType string, userId string) ([]Msg, error) {
-	result, err := r.client.Get(context.Background(), fmt.Sprintf("%v:%v:%v", MSG_KEY, botType, userId)).Result()
-	if err != nil {
-		return nil, err
-	}
-	var msgList []Msg
-	err = sonic.Unmarshal([]byte(result), &msgList)
-	if err != nil {
-		return nil, err
-	}
-	return msgList, nil
-}
-
-func (r *RedisChatDb) SetMsgList(botType string, userId string, msgList []Msg) {
-	res, err := sonic.Marshal(msgList)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	msgTime := os.Getenv("MSG_TIME")
-	var expires time.Duration
-	//转换为数字
-	msgT, err := strconv.Atoi(msgTime)
-	if err != nil || msgT < 0 {
-		msgT = 30
-		expires = time.Minute * time.Duration(msgT)
-	} else if msgT == 0 {
-		expires = 0 // 设置为0, 永不过期
-	} else {
-		expires = time.Minute * time.Duration(msgT)
-	}
-
-	r.client.Set(context.Background(), fmt.Sprintf("%v:%v:%v", MSG_KEY, botType, userId), res, expires)
-}
-
-func GetChatDb() (ChatDb, error) {
-	kvUrl := os.Getenv("KV_URL")
-	if kvUrl == "" {
-		return nil, errors.New("请配置KV_URL")
-	} else {
-		db, err := NewRedisChatDb(kvUrl)
-		if err != nil {
-			return nil, err
+	for _, part := range msg.Parts {
+		switch v := part.(type) {
+		case genai.Text:
+			dbMsg.Parts = append(dbMsg.Parts, db.ContentPart{Type: "text", Data: string(v)})
+		case genai.Blob:
+			// 将图片数据编码为 Base64 字符串
+			encodedData := base64.StdEncoding.EncodeToString(v.Data)
+			// 这里硬编码了MIME类型，因为数据库中没有存储
+			dbMsg.Parts = append(dbMsg.Parts, db.ContentPart{Type: "image", Data: encodedData, MIMEType: v.MIMEType})
 		}
-		return db, nil
 	}
+	return dbMsg
 }
 
-func GetValueWithMemory(key string) (string, bool) {
-	value, ok := Cache.Load(key)
-	if ok {
-		return value.(string), ok
+func (s *GeminiChat) toChatMsg(msg db.Msg) *genai.Content {
+	content := &genai.Content{
+		Role: msg.Role,
+		Parts: []genai.Part{},
 	}
-	return "", false
-}
-
-func SetValueWithMemory(key string, val any) {
-	Cache.Store(key, val)
-}
-
-func DeleteKeyWithMemory(key string) {
-	Cache.Delete(key)
-}
-
-func GetValue(key string) (val string, err error) {
-	val, flag := GetValueWithMemory(key)
-	if !flag {
-		if RedisClient == nil {
-			return "", errors.New("redis client is nil")
+	for _, part := range msg.Parts {
+		switch part.Type {
+		case "text":
+			content.Parts = append(content.Parts, genai.Text(part.Data))
+		case "image":
+			// 解码 Base64 字符串以获取图片数据
+			imageData, err := base64.StdEncoding.DecodeString(part.Data)
+			if err != nil {
+				fmt.Printf("Base64 decoding failed: %v", err)
+				continue
+			}
+			// 将数据转换为 genai.Blob
+			content.Parts = append(content.Parts, genai.ImageData(part.MIMEType, imageData))
 		}
-		val, err = RedisClient.Get(context.Background(), key).Result()
-		if err == redis.Nil {
-			return "", nil
-		}
-		SetValueWithMemory(key, val)
-		return
 	}
-	return
+	return content
 }
 
-func SetValue(key string, val any, expires time.Duration) (err error) {
-	SetValueWithMemory(key, val)
-
-	if RedisClient == nil {
-		return errors.New("redis client is nil")
+func (s *GeminiChat) getModel(userId string) string {
+	if model, err := db.GetModel(userId, config.Bot_Type_Gemini); err == nil && model != "" {
+		return model
 	}
+	// Use a valid model name for a recent version
+	return "gemini-1.5-pro-latest"
+}
+
+func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string {
+	r, flag := DoAction(userId, msg)
+	if flag {
+		return r
+	}
+
+	ctx := context.Background()
+	client, err := genai.NewClient(ctx, option.WithAPIKey(g.key))
+	if err != nil {
+		return err.Error()
+	}
+	defer client.Close()
+	model := client.GenerativeModel(g.getModel(userId))
+	if g.maxTokens > 0 {
+		model.SetMaxOutputTokens(int32(g.maxTokens))
+	}
+	cs := model.StartChat()
+
+	var parts []genai.Part
 	
-	err = RedisClient.Set(context.Background(), key, val, expires).Err()
-
-	return
-}
-
-func DeleteKey(key string) {
-	DeleteKeyWithMemory(key)
-	if RedisClient == nil {
-		return
-	}
-	RedisClient.Del(context.Background(), key)
-}
-
-func DeleteMsgList(botType string, userId string) {
-	RedisClient.Del(context.Background(), fmt.Sprintf("%v:%v:%v", MSG_KEY, botType, userId))
-}
-
-func SetPrompt(userId, botType, prompt string) {
-	SetValue(fmt.Sprintf("%s:%s:%s", PROMPT_KEY, userId, botType), prompt, 0)
-}
-
-func GetPrompt(userId, botType string) (string, error) {
-	return GetValue(fmt.Sprintf("%s:%s:%s", PROMPT_KEY, userId, botType))
-}
-
-func RemovePrompt(userId, botType string) {
-	DeleteKey(fmt.Sprintf("%s:%s:%s", PROMPT_KEY, userId, botType))
-}
-
-// todolist format: "todo1|todo2|todo3"
-func GetTodoList(userId string) (string, error) {
-	tListStr, err := GetValue(fmt.Sprintf("%s:%s", TODO_KEY, userId))
-	if err != nil && RedisClient == nil {
-		return "", err
-	}
-	if tListStr == "" {
-		return "todolist为空", nil
-	}
-	split := strings.Split(tListStr, "|")
-	var sb strings.Builder
-	for index, todo := range split {
-		sb.WriteString(fmt.Sprintf("%d. %s\n", index+1, todo))
-	}
-	return sb.String(), nil
-}
-
-func AddTodoList(userId string, todo string) error {
-	todoList, err := GetValue(fmt.Sprintf("%s:%s", TODO_KEY, userId))
-	if err != nil && RedisClient == nil {
-		return err
-	}
-	if todoList == "" {
-		todoList = todo
-	} else {
-		todoList = fmt.Sprintf("%s|%s", todoList, todo)
-	}
-	return SetValue(fmt.Sprintf("%s:%s", TODO_KEY, userId), todoList, 0)
-}
-
-func DelTodoList(userId string, todoIndex int) error {
-	todoList, err := GetValue(fmt.Sprintf("%s:%s", TODO_KEY, userId))
-	if err != nil && RedisClient == nil {
-		return err
-	}
-	todoList = strings.Split(todoList, "|")[todoIndex-1]
-	return SetValue(fmt.Sprintf("%s:%s", TODO_KEY, userId), todoList, 0)
-}
-
-func SetModel(userId, botType, model string) error {
-	if model == "" {
-		DeleteKey(fmt.Sprintf("%s:%s:%s", MODEL_KEY, userId, botType))
-		return nil
-	} else {
-		return SetValue(fmt.Sprintf("%s:%s:%s", MODEL_KEY, userId, botType), model, 0)
-	}
-}
-
-func GetModel(userId, botType string) (string, error) {
-	return GetValue(fmt.Sprintf("%s:%s:%s", MODEL_KEY, userId, botType))
-}
-
-// SetKeywordReply adds or updates a keyword reply.
-func SetKeywordReply(keyword, reply string) error {
-	replies, err := GetKeywordReplies()
-	if err != nil && err != redis.Nil {
-		return err
-	}
-
-	found := false
-	for i, kr := range replies {
-		if kr.Keyword == keyword {
-			replies[i].Reply = reply
-			found = true
-			break
+	// 处理图片 URL
+	if len(imageURL) > 0 && imageURL[0] != "" {
+		// 1. 发起HTTP请求下载图片
+		resp, err := http.Get(imageURL[0])
+		if err != nil {
+			return "下载图片失败: " + err.Error()
 		}
-	}
-	if !found {
-		replies = append(replies, KeywordReply{Keyword: keyword, Reply: reply})
-	}
+		defer resp.Body.Close()
 
-	res, err := sonic.Marshal(replies)
-	if err != nil {
-		return err
-	}
-
-	return SetValue(KEYWORD_REPLY_KEY, res, 0)
-}
-
-// GetKeywordReplies retrieves all keyword replies.
-func GetKeywordReplies() ([]KeywordReply, error) {
-	val, err := GetValue(KEYWORD_REPLY_KEY)
-	if err != nil {
-		if err == redis.Nil {
-			return []KeywordReply{}, nil
+		// 2. 检查响应状态码
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Sprintf("下载图片失败，状态码: %d", resp.StatusCode)
 		}
-		return nil, err
+	
+		// 3. 读取图片数据到内存
+		imageData, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return "读取图片数据失败: " + err.Error()
+		}
+		
+		// 4. 获取图片MIME类型
+		mimeType := http.DetectContentType(imageData)
+		
+		// 5. 创建genai.Blob
+		imagePart := genai.ImageData(mimeType, imageData) 
+	
+		// 6. 将图片数据添加到parts中
+		parts = append(parts, imagePart)
 	}
 
-	// Handle empty string case gracefully
-	if val == "" {
-		return []KeywordReply{}, nil
+	// 将文本消息添加到 parts 中，如果文本消息存在
+	if msg != "" {
+		parts = append(parts, genai.Text(msg))
 	}
 
-	var replies []KeywordReply
-	err = sonic.Unmarshal([]byte(val), &replies)
+	var msgs = GetMsgListWithDb(config.Bot_Type_Gemini, userId, &genai.Content{
+		Parts: parts,
+		Role: GeminiUser,
+	}, g.toDbMsg, g.toChatMsg)
+
+	if len(msgs) > 1 {
+		cs.History = msgs[:len(msgs)-1]
+	}
+
+	resp, err := cs.SendMessage(ctx, parts...)
 	if err != nil {
-		return nil, err
-	}
-	return replies, nil
-}
-
-// RemoveKeyword removes a keyword reply.
-func RemoveKeyword(keyword string) error {
-	replies, err := GetKeywordReplies()
-	if err != nil {
-		return err
+		return err.Error()
 	}
 
-	var newReplies []KeywordReply
-	for _, kr := range replies {
-		if kr.Keyword != keyword {
-			newReplies = append(newReplies, kr)
+	var responseText string
+	for _, part := range resp.Candidates[0].Content.Parts {
+		if text, ok := part.(genai.Text); ok {
+			responseText += string(text)
 		}
 	}
 
-	if len(newReplies) == 0 {
-		DeleteKey(KEYWORD_REPLY_KEY)
-		return nil
-	}
+	msgs = append(msgs, &genai.Content{
+		Parts: []genai.Part{genai.Text(responseText)},
+		Role: GeminiBot,
+	})
 
-	res, err := sonic.Marshal(newReplies)
-	if err != nil {
-		return err
-	}
-
-	return SetValue(KEYWORD_REPLY_KEY, res, 0)
-}
-
-// SetLastAIBot adds or updates the last used AI bot type.
-func SetLastAIBot(userId, botType string) error {
-	return SetValue(fmt.Sprintf("%s:%s", LAST_AI_BOT_KEY, userId), botType, 0)
-}
-
-// GetLastAIBot retrieves the last used AI bot type.
-func GetLastAIBot(userId string) (string, error) {
-	return GetValue(fmt.Sprintf("%s:%s", LAST_AI_BOT_KEY, userId))
+	SaveMsgListWithDb(config.Bot_Type_Gemini, userId, msgs, g.toDbMsg)
+	return responseText
 }
