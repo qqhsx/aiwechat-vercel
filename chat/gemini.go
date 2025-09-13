@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"bytes"
 	"encoding/base64"
 	"fmt"
 
@@ -37,7 +36,8 @@ func (s *GeminiChat) toDbMsg(msg *genai.Content) db.Msg {
 		case genai.Blob:
 			// 将图片数据编码为 Base64 字符串
 			encodedData := base64.StdEncoding.EncodeToString(v.Data)
-			dbMsg.Parts = append(dbMsg.Parts, db.ContentPart{Type: "image", Data: encodedData})
+			// 这里硬编码了MIME类型，因为数据库中没有存储
+			dbMsg.Parts = append(dbMsg.Parts, db.ContentPart{Type: "image", Data: encodedData, MimeType: v.MimeType})
 		}
 	}
 	return dbMsg
@@ -60,7 +60,7 @@ func (s *GeminiChat) toChatMsg(msg db.Msg) *genai.Content {
 				continue
 			}
 			// 将数据转换为 genai.Blob
-			content.Parts = append(content.Parts, genai.ImageData(part.Data, imageData))
+			content.Parts = append(content.Parts, genai.ImageData(part.MimeType, imageData))
 		}
 	}
 	return content
@@ -113,16 +113,21 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 		if err != nil {
 			return "读取图片数据失败: " + err.Error()
 		}
-
-		// 4. 创建genai.Blob，这里我们无法自动判断MIME类型，所以使用一个通用的
-		imagePart := genai.ImageData("image/jpeg", imageData) 
+		
+		// 4. 获取图片MIME类型
+		mimeType := http.DetectContentType(imageData)
+		
+		// 5. 创建genai.Blob
+		imagePart := genai.ImageData(mimeType, imageData) 
 	
-		// 5. 将图片数据添加到parts中
+		// 6. 将图片数据添加到parts中
 		parts = append(parts, imagePart)
 	}
 
-	// 将文本消息添加到 parts 中
-	parts = append(parts, genai.Text(msg))
+	// 将文本消息添加到 parts 中，如果文本消息存在
+	if msg != "" {
+		parts = append(parts, genai.Text(msg))
+	}
 
 	var msgs = GetMsgListWithDb(config.Bot_Type_Gemini, userId, &genai.Content{
 		Parts: parts,

@@ -48,6 +48,7 @@ func init() {
 type ContentPart struct {
 	Type     string `json:"type"` // "text" or "image"
 	Data     string `json:"data"` // The text content or image URL
+	MimeType string `json:"mime_type,omitempty"` // MIME type for image data
 }
 
 // Msg represents a message in a conversation.
