@@ -49,7 +49,27 @@ func (header *SparkResponseHeader) ToString() string {
 	return string(buf)
 }
 
-func (chat *SparkChat) Chat(userId, message string) (res string) {
+func (s *SparkChat) toDbMsg(msg SparkMessage) db.Msg {
+	return db.Msg{
+		Role: msg.Role,
+		Parts: []db.ContentPart{
+			{Type: "text", Data: msg.Content},
+		},
+	}
+}
+
+func (s *SparkChat) toChatMsg(msg db.Msg) SparkMessage {
+	text := ""
+	if len(msg.Parts) > 0 {
+		text = msg.Parts[0].Data
+	}
+	return SparkMessage{
+		Role:    msg.Role,
+		Content: text,
+	}
+}
+
+func (chat *SparkChat) Chat(userId, message string, imageURL ...string) (res string) {
 	r, flag := DoAction(userId, message)
 	if flag {
 		return r
@@ -70,20 +90,7 @@ func (chat *SparkChat) chat(userId string, message string) (res string) {
 		res = readResp(resp)
 		return
 	}
-	/*var msgs = []SparkMessage{
-		{
-			Role:    "user",
-			Content: message,
-		},
-	}
-	chatDb := db.ChatDbInstance
-	if chatDb != nil {
-		msgList, err := chatDb.GetMsgList(config.Bot_Type_Spark, userId)
-		if err == nil {
-			list := toSparkMsgList(msgList)
-			msgs = append(list, msgs...)
-		}
-	}*/
+
 	var msgs = GetMsgListWithDb(config.Bot_Type_Spark, userId, SparkMessage{
 		Role:    "user",
 		Content: message,
@@ -141,42 +148,6 @@ func (chat *SparkChat) chat(userId string, message string) (res string) {
 	})
 	SaveMsgListWithDb(config.Bot_Type_Spark, userId, msgs, chat.toDbMsg)
 	return
-}
-
-func (s *SparkChat) toDbMsg(msg SparkMessage) db.Msg {
-	return db.Msg{
-		Role: msg.Role,
-		Msg:  msg.Content,
-	}
-}
-
-func (s *SparkChat) toChatMsg(msg db.Msg) SparkMessage {
-	return SparkMessage{
-		Role:    msg.Role,
-		Content: msg.Msg,
-	}
-}
-
-func toSparkMsgList(msgList []db.Msg) []SparkMessage {
-	var messages []SparkMessage
-	for _, msg := range msgList {
-		messages = append(messages, SparkMessage{
-			Role:    msg.Role,
-			Content: msg.Msg,
-		})
-	}
-	return messages
-}
-
-func toMsgList(msgList []SparkMessage) []db.Msg {
-	var messages []db.Msg
-	for _, msg := range msgList {
-		messages = append(messages, db.Msg{
-			Role: msg.Role,
-			Msg:  msg.Content,
-		})
-	}
-	return messages
 }
 
 // 生成参数

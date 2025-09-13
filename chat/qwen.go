@@ -67,12 +67,24 @@ type Usage struct {
 	InputTokens  int `json:"input_tokens"`
 }
 
-func (chat *QwenChat) Chat(userId, message string) (res string) {
-	r, flag := DoAction(userId, message)
-	if flag {
-		return r
+func (s *QwenChat) toDbMsg(msg QwenMessage) db.Msg {
+	return db.Msg{
+		Role: msg.Role,
+		Parts: []db.ContentPart{
+			{Type: "text", Data: msg.Content},
+		},
 	}
-	return WithTimeChat(userId, message, chat.chat)
+}
+
+func (s *QwenChat) toChatMsg(msg db.Msg) QwenMessage {
+	text := ""
+	if len(msg.Parts) > 0 {
+		text = msg.Parts[0].Data
+	}
+	return QwenMessage{
+		Role:    msg.Role,
+		Content: text,
+	}
 }
 
 func (chat *QwenChat) getModel(userId string) string {
@@ -80,6 +92,14 @@ func (chat *QwenChat) getModel(userId string) string {
 		return model
 	}
 	return chat.Config.ModelVersion
+}
+
+func (chat *QwenChat) Chat(userId, message string, imageURL ...string) (res string) {
+	r, flag := DoAction(userId, message)
+	if flag {
+		return r
+	}
+	return WithTimeChat(userId, message, chat.chat)
 }
 
 func (chat *QwenChat) chat(userId string, message string) (res string) {
@@ -147,18 +167,4 @@ func (chat *QwenChat) chat(userId string, message string) (res string) {
 	})
 	SaveMsgListWithDb(config.Bot_Type_Qwen, userId, msgs, chat.toDbMsg)
 	return
-}
-
-func (s *QwenChat) toDbMsg(msg QwenMessage) db.Msg {
-	return db.Msg{
-		Role: msg.Role,
-		Msg:  msg.Content,
-	}
-}
-
-func (s *QwenChat) toChatMsg(msg db.Msg) QwenMessage {
-	return QwenMessage{
-		Role:    msg.Role,
-		Content: msg.Msg,
-	}
 }

@@ -443,7 +443,7 @@ func GetMsgListWithDb[T ChatMsg](botType, userId string, msg T, f func(msg T) db
 		if err == nil {
 			// check is contain system prompt
 			if len(list) > 0 {
-				if list[0].Role == "system" {
+				if len(list[0].Parts) > 0 && list[0].Role == "system" {
 					list = list[1:]
 				}
 			}
