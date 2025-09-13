@@ -12,7 +12,7 @@ type KeywordChat struct {
 	BaseChat
 }
 
-func (k *KeywordChat) Chat(userID string, msg string) string {
+func (k *KeywordChat) Chat(userID string, msg string, imageURL ...string) string {
 	// 检查是否为指令，如果是则交给DoAction处理
 	r, flag := DoAction(userID, msg)
 	if flag {
