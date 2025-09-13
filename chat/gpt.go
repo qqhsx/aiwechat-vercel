@@ -20,14 +20,20 @@ type SimpleGptChat struct {
 func (s *SimpleGptChat) toDbMsg(msg openai.ChatCompletionMessage) db.Msg {
 	return db.Msg{
 		Role: msg.Role,
-		Msg:  msg.Content,
+		Parts: []db.ContentPart{
+			{Type: "text", Data: msg.Content},
+		},
 	}
 }
 
 func (s *SimpleGptChat) toChatMsg(msg db.Msg) openai.ChatCompletionMessage {
+	text := ""
+	if len(msg.Parts) > 0 {
+		text = msg.Parts[0].Data
+	}
 	return openai.ChatCompletionMessage{
 		Role:    msg.Role,
-		Content: msg.Msg,
+		Content: text,
 	}
 }
 
@@ -40,7 +46,12 @@ func (s *SimpleGptChat) getModel(userId string) string {
 	return "gpt-3.5-turbo"
 }
 
-func (s *SimpleGptChat) chat(userId, msg string) string {
+func (s *SimpleGptChat) Chat(userId string, msg string, imageURL ...string) string {
+	r, flag := DoAction(userId, msg)
+	if flag {
+		return r
+	}
+
 	cfg := openai.DefaultConfig(s.token)
 	cfg.BaseURL = s.url
 	client := openai.NewClientWithConfig(cfg)
@@ -62,12 +73,4 @@ func (s *SimpleGptChat) chat(userId, msg string) string {
 	msgs = append(msgs, openai.ChatCompletionMessage{Role: openai.ChatMessageRoleAssistant, Content: content})
 	SaveMsgListWithDb(config.Bot_Type_Gpt, userId, msgs, s.toDbMsg)
 	return content
-}
-
-func (s *SimpleGptChat) Chat(userId string, msg string) string {
-	r, flag := DoAction(userId, msg)
-	if flag {
-		return r
-	}
-	return WithTimeChat(userId, msg, s.chat)
 }

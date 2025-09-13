@@ -52,14 +52,20 @@ type ClaudeContent struct {
 func (s *ClaudeChat) toDbMsg(msg ClaudeMessage) db.Msg {
 	return db.Msg{
 		Role: msg.Role,
-		Msg:  msg.Content,
+		Parts: []db.ContentPart{
+			{Type: "text", Data: msg.Content},
+		},
 	}
 }
 
 func (s *ClaudeChat) toChatMsg(msg db.Msg) ClaudeMessage {
+	text := ""
+	if len(msg.Parts) > 0 {
+		text = msg.Parts[0].Data
+	}
 	return ClaudeMessage{
 		Role:    msg.Role,
-		Content: msg.Msg,
+		Content: text,
 	}
 }
 
@@ -179,7 +185,7 @@ func (s *ClaudeChat) chat(userId, msg string) string {
 	return responseText
 }
 
-func (c *ClaudeChat) Chat(userId string, msg string) string {
+func (c *ClaudeChat) Chat(userId string, msg string, imageURL ...string) string {
 	r, flag := DoAction(userId, msg)
 	if flag {
 		return r
