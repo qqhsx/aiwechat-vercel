@@ -2,6 +2,11 @@ package chat
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"bytes"
+	"encoding/base64"
+	"fmt"
 
 	"github.com/google/generative-ai-go/genai"
 	"github.com/pwh-pwh/aiwechat-vercel/config"
@@ -30,9 +35,9 @@ func (s *GeminiChat) toDbMsg(msg *genai.Content) db.Msg {
 		case genai.Text:
 			dbMsg.Parts = append(dbMsg.Parts, db.ContentPart{Type: "text", Data: string(v)})
 		case genai.Blob:
-			// For local image data, you would store a path or unique identifier.
-			// Since we're not handling image fetching in this example, we'll store a placeholder.
-			dbMsg.Parts = append(dbMsg.Parts, db.ContentPart{Type: "image", Data: "image_placeholder"})
+			// 将图片数据编码为 Base64 字符串
+			encodedData := base64.StdEncoding.EncodeToString(v.Data)
+			dbMsg.Parts = append(dbMsg.Parts, db.ContentPart{Type: "image", Data: encodedData})
 		}
 	}
 	return dbMsg
@@ -48,17 +53,14 @@ func (s *GeminiChat) toChatMsg(msg db.Msg) *genai.Content {
 		case "text":
 			content.Parts = append(content.Parts, genai.Text(part.Data))
 		case "image":
-			// NOTE: The new API doesn't support genai.ImageFromURI directly.
-			// To send an image, you must fetch the image data and pass it as a genai.Blob.
-			// The current logic of passing a URL will not work with the new API.
-			// To fix this, you would need to implement image fetching.
-			// For example:
-			// resp, err := http.Get(part.Data)
-			// if err != nil { ... }
-			// imageData, err := io.ReadAll(resp.Body)
-			// if err != nil { ... }
-			// content.Parts = append(content.Parts, genai.ImageData("image/jpeg", imageData))
-			// As this is a placeholder, we'll ignore the image for now to allow the code to build.
+			// 解码 Base64 字符串以获取图片数据
+			imageData, err := base64.StdEncoding.DecodeString(part.Data)
+			if err != nil {
+				fmt.Printf("Base64 decoding failed: %v", err)
+				continue
+			}
+			// 将数据转换为 genai.Blob
+			content.Parts = append(content.Parts, genai.ImageData(part.Data, imageData))
 		}
 	}
 	return content
@@ -91,14 +93,36 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 	cs := model.StartChat()
 
 	var parts []genai.Part
-	parts = append(parts, genai.Text(msg))
-	// NOTE: The new API doesn't support passing image URLs directly.
-	// You need to download the image first and convert it to genai.Blob.
-	if len(imageURL) > 0 {
-		// As a temporary fix to allow the code to build, we will not append the image part.
-		// The multi-modal functionality will be disabled until this is properly implemented.
-		// To fix this, you need to write code to fetch the image data from imageURL.
+	
+	// 处理图片 URL
+	if len(imageURL) > 0 && imageURL[0] != "" {
+		// 1. 发起HTTP请求下载图片
+		resp, err := http.Get(imageURL[0])
+		if err != nil {
+			return "下载图片失败: " + err.Error()
+		}
+		defer resp.Body.Close()
+
+		// 2. 检查响应状态码
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Sprintf("下载图片失败，状态码: %d", resp.StatusCode)
+		}
+	
+		// 3. 读取图片数据到内存
+		imageData, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return "读取图片数据失败: " + err.Error()
+		}
+
+		// 4. 创建genai.Blob，这里我们无法自动判断MIME类型，所以使用一个通用的
+		imagePart := genai.ImageData("image/jpeg", imageData) 
+	
+		// 5. 将图片数据添加到parts中
+		parts = append(parts, imagePart)
 	}
+
+	// 将文本消息添加到 parts 中
+	parts = append(parts, genai.Text(msg))
 
 	var msgs = GetMsgListWithDb(config.Bot_Type_Gemini, userId, &genai.Content{
 		Parts: parts,
