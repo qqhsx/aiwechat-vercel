@@ -68,7 +68,11 @@ func handleWxMessage(msg *message.MixMessage) (replyMsg string) {
 	bot := chat.GetChatBot(config.GetUserBotType(userId))
 	if msgType == message.MsgTypeText {
 		replyMsg = bot.Chat(userId, msgContent)
+	} else if msgType == message.MsgTypeImage && msgContent != "" {
+		// 如果是图片消息，并且附带了文字内容，则将文字内容作为chat消息传递
+		replyMsg = bot.Chat(userId, msgContent, msg.PicURL)
 	} else {
+		// 否则，调用 HandleMediaMsg 处理纯图片或其他媒体类型
 		replyMsg = bot.HandleMediaMsg(msg)
 	}
 

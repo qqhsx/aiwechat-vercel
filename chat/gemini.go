@@ -21,15 +21,38 @@ type GeminiChat struct {
 }
 
 func (s *GeminiChat) toDbMsg(msg *genai.Content) db.Msg {
-	text := msg.Parts[0].(genai.Text)
-	return db.Msg{
+	dbMsg := db.Msg{
 		Role: msg.Role,
-		Msg:  string(text),
+		Parts: []db.ContentPart{},
 	}
+	for _, part := range msg.Parts {
+		switch v := part.(type) {
+		case genai.Text:
+			dbMsg.Parts = append(dbMsg.Parts, db.ContentPart{Type: "text", Data: string(v)})
+		case genai.ImageData:
+			// NOTE: This part is for local image data, but we'll store the URL for simplicity
+			// In a real implementation, you might save the image and store its URL
+		case genai.ImageFromURI:
+			dbMsg.Parts = append(dbMsg.Parts, db.ContentPart{Type: "image", Data: string(v)})
+		}
+	}
+	return dbMsg
 }
 
 func (s *GeminiChat) toChatMsg(msg db.Msg) *genai.Content {
-	return &genai.Content{Parts: []genai.Part{genai.Text(msg.Msg)}, Role: msg.Role}
+	content := &genai.Content{
+		Role: msg.Role,
+		Parts: []genai.Part{},
+	}
+	for _, part := range msg.Parts {
+		switch part.Type {
+		case "text":
+			content.Parts = append(content.Parts, genai.Text(part.Data))
+		case "image":
+			content.Parts = append(content.Parts, genai.ImageFromURI(part.Data))
+		}
+	}
+	return content
 }
 
 func (s *GeminiChat) getModel(userId string) string {
@@ -48,30 +71,43 @@ func (s *GeminiChat) chat(userId, msg string) string {
 	defer client.Close()
 	model := client.GenerativeModel(s.getModel(userId))
 	if s.maxTokens > 0 {
-		model.SetMaxOutputTokens(int32(s.maxTokens)) // 参数设置方法参考：https://github.com/google/generative-ai-go
+		model.SetMaxOutputTokens(int32(s.maxTokens))
 	}
 	// Initialize the chat
 	cs := model.StartChat()
+	
+	// Create parts for the new message
+	var parts []genai.Part
+	parts = append(parts, genai.Text(msg))
+
 	var msgs = GetMsgListWithDb(config.Bot_Type_Gemini, userId, &genai.Content{
-		Parts: []genai.Part{
-			genai.Text(msg),
-		},
+		Parts: parts,
 		Role: GeminiUser,
 	}, s.toDbMsg, s.toChatMsg)
+
 	if len(msgs) > 1 {
 		cs.History = msgs[:len(msgs)-1]
 	}
 
-	resp, err := cs.SendMessage(ctx, genai.Text(msg))
+	resp, err := cs.SendMessage(ctx, parts...)
 	if err != nil {
 		return err.Error()
 	}
-	text := resp.Candidates[0].Content.Parts[0].(genai.Text)
-	msgs = append(msgs, &genai.Content{Parts: []genai.Part{
-		text,
-	}, Role: GeminiBot})
+	
+	var responseText string
+	for _, part := range resp.Candidates[0].Content.Parts {
+		if text, ok := part.(genai.Text); ok {
+			responseText += string(text)
+		}
+	}
+
+	msgs = append(msgs, &genai.Content{
+		Parts: []genai.Part{genai.Text(responseText)},
+		Role: GeminiBot,
+	})
+
 	SaveMsgListWithDb(config.Bot_Type_Gemini, userId, msgs, s.toDbMsg)
-	return string(text)
+	return responseText
 }
 
 func (g *GeminiChat) Chat(userId string, msg string) string {
@@ -80,5 +116,52 @@ func (g *GeminiChat) Chat(userId string, msg string) string {
 		return r
 	}
 	return WithTimeChat(userId, msg, g.chat)
+}
 
+func (g *GeminiChat) Chat(userId string, msg string, imageURL string) string {
+	ctx := context.Background()
+	client, err := genai.NewClient(ctx, option.WithAPIKey(g.key))
+	if err != nil {
+		return err.Error()
+	}
+	defer client.Close()
+	model := client.GenerativeModel(g.getModel(userId))
+	if g.maxTokens > 0 {
+		model.SetMaxOutputTokens(int32(g.maxTokens))
+	}
+
+	cs := model.StartChat()
+	
+	var parts []genai.Part
+	parts = append(parts, genai.Text(msg))
+	parts = append(parts, genai.ImageFromURI(imageURL))
+
+	var msgs = GetMsgListWithDb(config.Bot_Type_Gemini, userId, &genai.Content{
+		Parts: parts,
+		Role: GeminiUser,
+	}, g.toDbMsg, g.toChatMsg)
+
+	if len(msgs) > 1 {
+		cs.History = msgs[:len(msgs)-1]
+	}
+
+	resp, err := cs.SendMessage(ctx, parts...)
+	if err != nil {
+		return err.Error()
+	}
+	
+	var responseText string
+	for _, part := range resp.Candidates[0].Content.Parts {
+		if text, ok := part.(genai.Text); ok {
+			responseText += string(text)
+		}
+	}
+
+	msgs = append(msgs, &genai.Content{
+		Parts: []genai.Part{genai.Text(responseText)},
+		Role: GeminiBot,
+	})
+
+	SaveMsgListWithDb(config.Bot_Type_Gemini, userId, msgs, g.toDbMsg)
+	return responseText
 }

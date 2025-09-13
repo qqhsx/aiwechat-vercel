@@ -44,9 +44,16 @@ func init() {
 	ChatDbInstance = db
 }
 
+// ContentPart represents a part of a message, which can be text or an image.
+type ContentPart struct {
+	Type     string `json:"type"` // "text" or "image"
+	Data     string `json:"data"` // The text content or image URL
+}
+
+// Msg represents a message in a conversation.
 type Msg struct {
-	Role string
-	Msg  string
+	Role  string `json:"role"`
+	Parts []ContentPart `json:"parts"`
 }
 
 type ChatDb interface {
@@ -99,7 +106,7 @@ func (r *RedisChatDb) SetMsgList(botType string, userId string, msgList []Msg) {
 		msgT = 30
 		expires = time.Minute * time.Duration(msgT)
 	} else if msgT == 0 {
-		expires = 0 // 设置为0，永不过期
+		expires = 0 // 设置为0, 永不过期
 	} else {
 		expires = time.Minute * time.Duration(msgT)
 	}

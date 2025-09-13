@@ -135,6 +135,11 @@ func (s SimpleChat) Chat(userId string, msg string) string {
 func (s SimpleChat) HandleMediaMsg(msg *message.MixMessage) string {
 	switch msg.MsgType {
 	case message.MsgTypeImage:
+		// 当图片消息带有文本或命令时，将两者结合起来处理为多模态输入
+		if msg.Content != "" {
+			return GetChatBot(config.GetUserBotType(string(msg.FromUserName))).Chat(string(msg.FromUserName), msg.Content, msg.PicURL)
+		}
+		// 否则，仅返回图片URL，保留原有的“图床”功能
 		return msg.PicURL
 	case message.MsgTypeEvent:
 		if msg.Event == message.EventSubscribe {
@@ -432,7 +437,9 @@ func GetMsgListWithDb[T ChatMsg](botType, userId string, msg T, f func(msg T) db
 		if prompt != "" {
 			dbList = append(dbList, db.Msg{
 				Role: "system",
-				Msg:  prompt,
+				Parts: []db.ContentPart{
+					{Type: "text", Data: prompt},
+				},
 			})
 		}
 	}
