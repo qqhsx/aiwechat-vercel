@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/pwh-pwh/aiwechat-vercel/chat"
 	"github.com/pwh-pwh/aiwechat-vercel/config"
@@ -69,10 +70,20 @@ func handleWxMessage(msg *message.MixMessage) (replyMsg string) {
 	if msgType == message.MsgTypeText {
 		replyMsg = bot.Chat(userId, msgContent)
 	} else if msgType == message.MsgTypeImage {
-		// 如果是图片消息，并且附带了文字内容，则将文字内容作为chat消息传递
-		replyMsg = bot.Chat(userId, msgContent, msg.PicURL)
+		// 调用 Gemini 模型获取图片解读
+		geminiReply := bot.Chat(userId, msgContent, msg.PicURL)
+		
+		// 获取图片链接
+		imageLink := msg.PicURL
+		
+		// 拼接回复内容，包括图片链接和 Gemini 的解读
+		var replyBuilder strings.Builder
+		replyBuilder.WriteString("图片链接：\n")
+		replyBuilder.WriteString(imageLink)
+		replyBuilder.WriteString("\n\nGemini 图片解读：\n")
+		replyBuilder.WriteString(geminiReply)
+		replyMsg = replyBuilder.String()
 	} else {
-		// 否则，调用 HandleMediaMsg 处理纯图片或其他媒体类型
 		replyMsg = bot.HandleMediaMsg(msg)
 	}
 
