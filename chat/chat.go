@@ -95,12 +95,12 @@ func DoAction(userId, msg string) (r string, flag bool) {
 		switch action {
 		case config.Wx_Command_AddKeyword,
 			config.Wx_Command_DelKeyword,
-			config.Wx_Command_Prompt,
-			config.Wx_Command_RmPrompt,
-			config.Wx_Command_SetModel,
-			config.Wx_Command_Clear,
-			config.Wx_Todo_Add,
-			config.Wx_Todo_Del:
+//			config.Wx_Command_Prompt,
+//			config.Wx_Command_RmPrompt,
+//			config.Wx_Command_SetModel,
+//			config.Wx_Command_Clear,
+//			config.Wx_Todo_Add,
+//			config.Wx_Todo_Del:
 			if !isAdmin(userId) {
 				return "对不起，您没有权限执行此操作。", true
 			}
