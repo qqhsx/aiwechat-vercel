@@ -22,10 +22,10 @@ func Wx(rw http.ResponseWriter, req *http.Request) {
 	wc := wechat.NewWechat()
 	memory := cache.NewMemory()
 	cfg := &offConfig.Config{
-		AppID:     "",
+		AppID:     "",
 		AppSecret: "",
-		Token:     config.GetWxToken(),
-		Cache:     memory,
+		Token:     config.GetWxToken(),
+		Cache:     memory,
 	}
 	officialAccount := wc.GetOfficialAccount(cfg)
 
