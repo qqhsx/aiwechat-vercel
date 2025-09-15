@@ -1,4 +1,4 @@
-# gemini.go
+// gemini.go
 
 package chat
 
