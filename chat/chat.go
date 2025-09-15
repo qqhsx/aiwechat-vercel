@@ -94,7 +94,7 @@ func DoAction(userId, msg string) (r string, flag bool) {
 		// 管理员权限检查
 		switch action {
 		case config.Wx_Command_AddKeyword,
-			config.Wx_Command_DelKeyword,
+			config.Wx_Command_DelKeyword:
 //			config.Wx_Command_Prompt,
 //			config.Wx_Command_RmPrompt,
 //			config.Wx_Command_SetModel,
