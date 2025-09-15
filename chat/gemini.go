@@ -71,7 +71,7 @@ func (s *GeminiChat) getModel(userId string) string {
 		return model
 	}
 	// Use a valid model name for a recent version
-	return "gemini-1.5-pro-latest"
+	return "gemini-1.5-flash-latest"
 }
 
 func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string {
