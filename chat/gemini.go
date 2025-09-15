@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"encoding/base64"
 	"fmt"
+	"time"
 
 	"github.com/google/generative-ai-go/genai"
 	"github.com/pwh-pwh/aiwechat-vercel/config"
@@ -92,7 +93,6 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 	if g.maxTokens > 0 {
 		model.SetMaxOutputTokens(int32(g.maxTokens))
 	}
-	cs := model.StartChat()
 
 	var parts []genai.Part
 	
@@ -130,17 +130,26 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 	if msg != "" {
 		parts = append(parts, genai.Text(msg))
 	}
-
-	var msgs = GetMsgListWithDb(config.Bot_Type_Gemini, userId, &genai.Content{
-		Parts: parts,
-		Role: GeminiUser,
-	}, g.toDbMsg, g.toChatMsg)
-
-	if len(msgs) > 1 {
-		cs.History = msgs[:len(msgs)-1]
+	
+	// 这里不再使用cs.History，而是直接发送当前消息
+	// 这样可以避免因历史消息过大导致配额超出
+	var resp *genai.GenerateContentResponse
+	
+	// 加入重试机制
+	for i := 0; i < 3; i++ {
+		resp, err = model.GenerateContent(ctx, parts...)
+		if err == nil {
+			break
+		}
+		// 检查是否是 429 错误
+		if respErr, ok := err.(interface{ Error() string }); ok && respErr.Error() == "googleapi: Error 429: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits." {
+			// 指数退避重试
+			time.Sleep(time.Duration(i+1) * time.Second)
+			continue
+		}
+		return err.Error()
 	}
 
-	resp, err := cs.SendMessage(ctx, parts...)
 	if err != nil {
 		return err.Error()
 	}
@@ -152,11 +161,17 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 		}
 	}
 
+	// 储存完整的聊天历史到数据库
+	// 这是为了支持其他模型，如 GPT，因为它们需要历史记录来维持上下文
+	var msgs = GetMsgListWithDb(config.Bot_Type_Gemini, userId, &genai.Content{
+		Parts: parts,
+		Role: GeminiUser,
+	}, g.toDbMsg, g.toChatMsg)
 	msgs = append(msgs, &genai.Content{
 		Parts: []genai.Part{genai.Text(responseText)},
 		Role: GeminiBot,
 	})
-
 	SaveMsgListWithDb(config.Bot_Type_Gemini, userId, msgs, g.toDbMsg)
+
 	return responseText
 }
