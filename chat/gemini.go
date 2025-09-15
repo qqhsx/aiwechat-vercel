@@ -9,6 +9,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"time"
+	"strconv"
+	"strings"
 
 	"github.com/google/generative-ai-go/genai"
 	"github.com/pwh-pwh/aiwechat-vercel/config"
@@ -131,8 +133,6 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 		parts = append(parts, genai.Text(msg))
 	}
 	
-	// 这里不再使用cs.History，而是直接发送当前消息
-	// 这样可以避免因历史消息过大导致配额超出
 	var resp *genai.GenerateContentResponse
 	
 	// 加入重试机制
@@ -141,9 +141,26 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 		if err == nil {
 			break
 		}
+		
 		// 检查是否是 429 错误
-		if respErr, ok := err.(interface{ Error() string }); ok && respErr.Error() == "googleapi: Error 429: You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits." {
-			// 指数退避重试
+		if strings.Contains(err.Error(), "429") {
+			// 尝试从错误信息中解析精确的重试时间
+			const retryPrefix = "retry in "
+			if retryIndex := strings.Index(err.Error(), retryPrefix); retryIndex != -1 {
+				// 提取重试时间字符串
+				retryStr := err.Error()[retryIndex+len(retryPrefix):]
+				parts := strings.Split(retryStr, "s")
+				if len(parts) > 0 {
+					if waitTime, errParse := strconv.Atoi(parts[0]); errParse == nil {
+						fmt.Printf("Waiting for %d seconds before retrying...\n", waitTime)
+						time.Sleep(time.Duration(waitTime) * time.Second)
+						continue // 继续下一次重试
+					}
+				}
+			}
+			
+			// 如果无法解析，使用指数退避
+			fmt.Printf("Encountered 429 error, retrying with exponential backoff...\n")
 			time.Sleep(time.Duration(i+1) * time.Second)
 			continue
 		}
