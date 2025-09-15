@@ -1,3 +1,5 @@
+# gemini.go
+
 package chat
 
 import (
