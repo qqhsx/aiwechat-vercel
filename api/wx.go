@@ -4,23 +4,28 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/pwh-pwh/aiwechat-vercel/chat"
 	"github.com/pwh-pwh/aiwechat-vercel/config"
+	"github.com/pwh-pwh/aiwechat-vercel/db"
 	"github.com/silenceper/wechat/v2"
 	"github.com/silenceper/wechat/v2/cache"
 	offConfig "github.com/silenceper/wechat/v2/officialaccount/config"
 	"github.com/silenceper/wechat/v2/officialaccount/message"
 )
 
+// 定义用于缓存文本消息的Redis键前缀
+const textCacheKeyPrefix = "text_cache:"
+
 func Wx(rw http.ResponseWriter, req *http.Request) {
 	wc := wechat.NewWechat()
 	memory := cache.NewMemory()
 	cfg := &offConfig.Config{
-		AppID:     "",
+		AppID:     "",
 		AppSecret: "",
-		Token:     config.GetWxToken(),
-		Cache:     memory,
+		Token:     config.GetWxToken(),
+		Cache:     memory,
 	}
 	officialAccount := wc.GetOfficialAccount(cfg)
 
@@ -65,27 +70,64 @@ func handleWxMessage(msg *message.MixMessage) (replyMsg string) {
 		}
 		return
 	}
+	
+	botType := config.GetUserBotType(userId)
+	bot := chat.GetChatBot(botType)
 
-	bot := chat.GetChatBot(config.GetUserBotType(userId))
-	if msgType == message.MsgTypeText {
-		replyMsg = bot.Chat(userId, msgContent)
-	} else if msgType == message.MsgTypeImage {
-		// 调用 Gemini 模型获取图片解读
-		geminiReply := bot.Chat(userId, msgContent, msg.PicURL)
+	switch msgType {
+	case message.MsgTypeText:
+		// 如果是指令，优先处理
+		if r, flag := chat.DoAction(userId, msgContent); flag {
+			replyMsg = r
+			return
+		}
 		
+		// 如果当前bot是gemini，缓存文本消息，等待后续图片
+		if botType == config.Bot_Type_Gemini {
+			db.SetValue(textCacheKeyPrefix+userId, msgContent, 10*time.Second)
+			// 返回一个临时回复，避免用户看到两个回复
+			return "已收到文字，请发送图片进行处理。"
+		}
+		
+		// 其他情况，直接调用bot.Chat处理
+		replyMsg = bot.Chat(userId, msgContent)
+
+	case message.MsgTypeImage:
 		// 获取图片链接
 		imageLink := msg.PicURL
+
+		// 如果当前bot是gemini，检查是否有缓存的文本消息
+		if botType == config.Bot_Type_Gemini {
+			cachedText, err := db.GetValue(textCacheKeyPrefix + userId)
+			if err == nil && cachedText != "" {
+				// 找到缓存文本，组合图文消息
+				db.DeleteKey(textCacheKeyPrefix + userId) // 删除缓存
+				
+				// 调用Gemini模型，同时传入文本和图片URL
+				geminiReply := bot.Chat(userId, cachedText, imageLink)
+				
+				var replyBuilder strings.Builder
+				replyBuilder.WriteString("图片链接：\n")
+				replyBuilder.WriteString(imageLink)
+				replyBuilder.WriteString("\n\nGemini 图片解读：\n")
+				replyBuilder.WriteString(geminiReply)
+				replyMsg = replyBuilder.String()
+				return
+			}
+		}
 		
-		// 拼接回复内容，包括图片链接和 Gemini 的解读
+		// 如果没有缓存文本，或者不是Gemini模型，只处理图片
+		geminiReply := bot.Chat(userId, "", imageLink)
+		
 		var replyBuilder strings.Builder
 		replyBuilder.WriteString("图片链接：\n")
 		replyBuilder.WriteString(imageLink)
 		replyBuilder.WriteString("\n\nGemini 图片解读：\n")
 		replyBuilder.WriteString(geminiReply)
 		replyMsg = replyBuilder.String()
-	} else {
+
+	default:
 		replyMsg = bot.HandleMediaMsg(msg)
 	}
-
 	return
 }
