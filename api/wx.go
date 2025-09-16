@@ -17,10 +17,10 @@ func Wx(rw http.ResponseWriter, req *http.Request) {
 	wc := wechat.NewWechat()
 	memory := cache.NewMemory()
 	cfg := &offConfig.Config{
-		AppID: "",
+		AppID:     "",
 		AppSecret: "",
-		Token: config.GetWxToken(),
-		Cache: memory,
+		Token:     config.GetWxToken(),
+		Cache:     memory,
 	}
 	officialAccount := wc.GetOfficialAccount(cfg)
 
@@ -67,18 +67,20 @@ func handleWxMessage(msg *message.MixMessage) (replyMsg string) {
 		}
 		return
 	}
-
-	bot := chat.GetChatBot(config.GetUserBotType(userId))
-
-	// 先处理文本消息
+	
+	// 首先，检查并处理所有命令
 	if msgType == message.MsgTypeText {
-		// bot.Chat 方法内部会处理所有指令和普通文本聊天
-		replyMsg = bot.Chat(userId, msgContent)
-		return
+		if actionReply, isAction := chat.DoAction(userId, msgContent); isAction {
+			return actionReply
+		}
 	}
-
-	// 再处理媒体消息和事件
-	if msgType == message.MsgTypeImage {
+	
+	// 如果不是命令，再根据用户当前选择的模式处理
+	bot := chat.GetChatBot(config.GetUserBotType(userId))
+	
+	if msgType == message.MsgTypeText {
+		replyMsg = bot.Chat(userId, msgContent)
+	} else if msgType == message.MsgTypeImage {
 		// 如果当前 bot 是 ImageChat，直接返回 URL
 		if _, ok := bot.(*chat.ImageChat); ok {
 			replyMsg = bot.HandleMediaMsg(msg)
