@@ -67,9 +67,14 @@ func handleWxMessage(msg *message.MixMessage) (replyMsg string) {
 	}
 
 	bot := chat.GetChatBot(config.GetUserBotType(userId))
-	if msgType == message.MsgTypeText {
-		replyMsg = bot.Chat(userId, msgContent)
-	} else if msgType == message.MsgTypeImage {
+	
+	if bot, ok := bot.(*chat.ImageChat); ok {
+		// 如果当前机器人是图床机器人，直接交给它处理
+		replyMsg = bot.HandleMediaMsg(msg)
+		return
+	}
+	
+	if msgType == message.MsgTypeImage {
 		// 调用 Gemini 模型获取图片解读
 		geminiReply := bot.Chat(userId, msgContent, msg.PicURL)
 		

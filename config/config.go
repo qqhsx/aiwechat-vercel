@@ -16,25 +16,29 @@ const (
 	GPT  = "gpt"
 	ECHO = "echo"
 
-	Bot_Type_Key    = "botType"
-	Bot_Type_Echo   = "echo"
-	Bot_Type_Gpt    = "gpt"
-	Bot_Type_Spark  = "spark"
-	Bot_Type_Qwen   = "qwen"
-	Bot_Type_Gemini = "gemini"
+	Bot_Type_Key     = "botType"
+	Bot_Type_Echo    = "echo"
+	Bot_Type_Gpt     = "gpt"
+	Bot_Type_Spark   = "spark"
+	Bot_Type_Qwen    = "qwen"
+	Bot_Type_Gemini  = "gemini"
 	Bot_Type_Keyword = "keyword"
-	AdminUsersKey = "ADMIN_USERS"
+	Bot_Type_Image   = "image" // 新增图床机器人类型
+	AdminUsersKey    = "ADMIN_USERS"
 	Bot_Type_Claude  = "claude"
 
 	KeywordMatchModeKey = "KEYWORD_MATCH_MODE"
-	MatchModePartial = "partial"
-	MatchModeFull = "full"
+	MatchModePartial    = "partial"
+	MatchModeFull       = "full"
 )
+
+// 新增图床机器人的命令
+const Wx_Command_Image = "/image"
 
 var (
 	Cache sync.Map
 
-	Support_Bots = []string{Bot_Type_Gpt, Bot_Type_Spark, Bot_Type_Qwen, Bot_Type_Gemini, Bot_Type_Claude, Bot_Type_Keyword}
+	Support_Bots = []string{Bot_Type_Gpt, Bot_Type_Spark, Bot_Type_Qwen, Bot_Type_Gemini, Bot_Type_Claude, Bot_Type_Keyword, Bot_Type_Image}
 )
 
 func IsSupportPrompt(botType string) bool {
@@ -57,6 +61,8 @@ func CheckBotConfig(botType string) (actualotType string, err error) {
 		err = CheckGeminiConfig()
 	case Bot_Type_Keyword:
 		err = nil // 本地实现，不需要外部配置
+	case Bot_Type_Image:
+		err = nil // 本地实现，不需要外部配置
 	case Bot_Type_Claude:
 		err = CheckClaudeConfig()
 	}
@@ -66,13 +72,14 @@ func CheckBotConfig(botType string) (actualotType string, err error) {
 func CheckAllBotConfig() (botType string, checkRes map[string]bool) {
 	botType = GetBotType()
 	checkRes = map[string]bool{
-		Bot_Type_Echo:   true,
-		Bot_Type_Gpt:    true,
-		Bot_Type_Spark:  true,
-		Bot_Type_Qwen:   true,
-		Bot_Type_Gemini: true,
+		Bot_Type_Echo:    true,
+		Bot_Type_Gpt:     true,
+		Bot_Type_Spark:   true,
+		Bot_Type_Qwen:    true,
+		Bot_Type_Gemini:  true,
 		Bot_Type_Keyword: true, // 增加对关键词模式的检查
-		Bot_Type_Claude: true,
+		Bot_Type_Image:   true, // 增加对图床模式的检查
+		Bot_Type_Claude:  true,
 	}
 
 	err := CheckGptConfig()
