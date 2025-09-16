@@ -33,7 +33,6 @@ const (
 	Wx_Command_Clear     = "/clear"
 	Wx_Command_Keyword   = "/keyword" // 切换到关键词自动回复模式
 	Wx_Command_AI        = "/ai"      // 切换回AI对话模式
-	Wx_Command_Image       = "/image" // 新增图床命令
 	Wx_Command_AddKeyword  = "/addkeyword"
 	Wx_Command_DelKeyword  = "/delkeyword"
 	Wx_Command_ListKeywords  = "/listkeywords"

@@ -30,10 +30,9 @@ const (
 	KeywordMatchModeKey = "KEYWORD_MATCH_MODE"
 	MatchModePartial    = "partial"
 	MatchModeFull       = "full"
-)
 
-// 新增图床机器人的命令
-const Wx_Command_Image = "/image"
+	Wx_Command_Image = "/image" // 新增图床命令
+)
 
 var (
 	Cache sync.Map
