@@ -17,10 +17,10 @@ func Wx(rw http.ResponseWriter, req *http.Request) {
 	wc := wechat.NewWechat()
 	memory := cache.NewMemory()
 	cfg := &offConfig.Config{
-		AppID:     "",
+		AppID: "",
 		AppSecret: "",
-		Token:     config.GetWxToken(),
-		Cache:     memory,
+		Token: config.GetWxToken(),
+		Cache: memory,
 	}
 	officialAccount := wc.GetOfficialAccount(cfg)
 
@@ -52,7 +52,9 @@ func handleWxMessage(msg *message.MixMessage) (replyMsg string) {
 
 	// Check if user is authenticated (only if ADDME_PASSWORD is set)
 	if config.GetAddMePassword() != "" && !config.IsUserAuthenticated(userId) {
-		if msgType == message.MsgTypeText {
+		if msgType == message.MsgTypeImage {
+			replyMsg = "功能还在开发中"
+		} else if msgType == message.MsgTypeText {
 			// Only allow /addme command for non-authenticated users
 			if msgContent == "/addme" || len(msgContent) > len("/addme") && msgContent[:len("/addme")] == "/addme" {
 				bot := chat.GetChatBot(config.GetUserBotType(userId))
@@ -67,15 +69,23 @@ func handleWxMessage(msg *message.MixMessage) (replyMsg string) {
 	}
 
 	bot := chat.GetChatBot(config.GetUserBotType(userId))
-	
-	if bot, ok := bot.(*chat.ImageChat); ok {
-		// 如果当前机器人是图床机器人，直接交给它处理
-		replyMsg = bot.HandleMediaMsg(msg)
+
+	// 先处理文本消息
+	if msgType == message.MsgTypeText {
+		// bot.Chat 方法内部会处理所有指令和普通文本聊天
+		replyMsg = bot.Chat(userId, msgContent)
 		return
 	}
-	
+
+	// 再处理媒体消息和事件
 	if msgType == message.MsgTypeImage {
-		// 调用 Gemini 模型获取图片解读
+		// 如果当前 bot 是 ImageChat，直接返回 URL
+		if _, ok := bot.(*chat.ImageChat); ok {
+			replyMsg = bot.HandleMediaMsg(msg)
+			return
+		}
+		
+		// 如果是其他 AI bot，则进行图片解读
 		geminiReply := bot.Chat(userId, msgContent, msg.PicURL)
 		
 		// 获取图片链接
@@ -89,6 +99,7 @@ func handleWxMessage(msg *message.MixMessage) (replyMsg string) {
 		replyBuilder.WriteString(geminiReply)
 		replyMsg = replyBuilder.String()
 	} else {
+		// 处理其他媒体和事件消息
 		replyMsg = bot.HandleMediaMsg(msg)
 	}
 
