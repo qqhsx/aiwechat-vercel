@@ -3,6 +3,7 @@ package chat
 import (
 	"strings"
 
+	"github.com/pwh-pwh/aiwechat-vercel/client"
 	"github.com/pwh-pwh/aiwechat-vercel/config"
 	"github.com/pwh-pwh/aiwechat-vercel/db"
 	"github.com/silenceper/wechat/v2/officialaccount/message"
@@ -29,11 +30,11 @@ func (k *KeywordChat) Chat(userID string, msg string, imageURL ...string) string
 	for _, reply := range replies {
 		if matchMode == config.MatchModeFull {
 			if msg == reply.Keyword {
-				return reply.Reply
+				return k.processReply(userID, reply.Reply)
 			}
 		} else {
 			if strings.Contains(msg, reply.Keyword) {
-				return reply.Reply
+				return k.processReply(userID, reply.Reply)
 			}
 		}
 	}
@@ -48,4 +49,19 @@ func (k *KeywordChat) HandleMediaMsg(msg *message.MixMessage) string {
 		return simpleChat.HandleMediaMsg(msg)
 	}
 	return "关键词回复模式不支持处理多媒体消息"
+}
+
+// processReply handles dynamic keyword replies based on special markers.
+func (k *KeywordChat) processReply(userID string, reply string) string {
+	// Check for a special marker to trigger dynamic behavior
+	if reply == "__NOW_PLAYING__" {
+		movies, err := client.GetNowPlayingMovies()
+		if err != nil {
+			return "获取正在上映电影列表失败：" + err.Error()
+		}
+		return movies
+	}
+
+	// For all other cases, return the static reply
+	return reply
 }
