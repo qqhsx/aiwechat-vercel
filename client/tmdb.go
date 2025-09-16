@@ -66,8 +66,8 @@ func GetNowPlayingMovies() (string, error) {
 	var resultBuilder strings.Builder
 	resultBuilder.WriteString("正在上映的电影：\n")
 	
-	// Limit to top 5 results to avoid long messages
-	limit := 5
+	// Limit to top 20 results to avoid long messages
+	limit := 20
 	if len(moviesResp.Results) < limit {
 		limit = len(moviesResp.Results)
 	}
