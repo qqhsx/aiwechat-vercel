@@ -137,12 +137,18 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 		Role: GeminiUser,
 	}, g.toDbMsg, g.toChatMsg)
 
+	// 将 []*genai.Content 转换为 []genai.Part
+	var historyParts []genai.Part
+	for _, m := range msgs {
+		historyParts = append(historyParts, m.Parts...)
+	}
+
 	var resp *genai.GenerateContentResponse
 	
 	// 加入智能重试机制
 	for i := 0; i < 3; i++ {
 		// 每次都发送完整的历史消息列表
-		resp, err = model.GenerateContent(ctx, msgs...)
+		resp, err = model.GenerateContent(ctx, historyParts...)
 		if err == nil {
 			break
 		}
