@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/pwh-pwh/aiwechat-vercel/chat"
 	"github.com/pwh-pwh/aiwechat-vercel/config"
@@ -51,9 +52,7 @@ func handleWxMessage(msg *message.MixMessage) (replyMsg string) {
 
 	// Check if user is authenticated (only if ADDME_PASSWORD is set)
 	if config.GetAddMePassword() != "" && !config.IsUserAuthenticated(userId) {
-		if msgType == message.MsgTypeImage {
-			replyMsg = "功能还在开发中"
-		} else if msgType == message.MsgTypeText {
+		if msgType == message.MsgTypeText {
 			// Only allow /addme command for non-authenticated users
 			if msgContent == "/addme" || len(msgContent) > len("/addme") && msgContent[:len("/addme")] == "/addme" {
 				bot := chat.GetChatBot(config.GetUserBotType(userId))
@@ -66,32 +65,29 @@ func handleWxMessage(msg *message.MixMessage) (replyMsg string) {
 		}
 		return
 	}
-	
-	// 首先，检查并处理所有命令
-	if msgType == message.MsgTypeText {
-		if actionReply, isAction := chat.DoAction(userId, msgContent); isAction {
-			return actionReply
-		}
-	}
-	
-	// 如果不是命令，再根据用户当前选择的模式处理
+
 	bot := chat.GetChatBot(config.GetUserBotType(userId))
-	
 	if msgType == message.MsgTypeText {
 		replyMsg = bot.Chat(userId, msgContent)
 	} else if msgType == message.MsgTypeImage {
-		// 如果当前 bot 是 ImageChat，直接返回 URL
+		// 如果当前 bot 是关键词模式，则只返回图片链接
 		if _, ok := bot.(*chat.KeywordChat); ok {
 			replyMsg = bot.HandleMediaMsg(msg)
 			return
 		}
 		
-		// 如果是其他 AI bot，则进行图片解读
-		geminiReply := bot.Chat(userId, msgContent, msg.PicURL)
+		// 如果是其他 AI bot，则统一使用 Gemini 进行图片解读
+		geminiBot := chat.GetGeminiChatBot()
+		geminiReply := geminiBot.Chat(userId, "", msg.PicURL)
 		
-		replyMsg = "Gemini 图片解读：\n" + geminiReply
+		// 拼接回复内容，包括图片链接和 Gemini 的解读
+		var replyBuilder strings.Builder
+		replyBuilder.WriteString("图片链接：\n")
+		replyBuilder.WriteString(msg.PicURL)
+		replyBuilder.WriteString("\n\nGemini 图片解读：\n")
+		replyBuilder.WriteString(geminiReply)
+		replyMsg = replyBuilder.String()
 	} else {
-		// 处理其他媒体和事件消息
 		replyMsg = bot.HandleMediaMsg(msg)
 	}
 

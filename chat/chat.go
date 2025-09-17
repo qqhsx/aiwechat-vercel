@@ -416,6 +416,14 @@ func GetChatBot(botType string) BaseChat {
 	}
 }
 
+func GetGeminiChatBot() BaseChat {
+	return &GeminiChat{
+		BaseChat:  SimpleChat{},
+		key:       config.GetGeminiKey(),
+		maxTokens: config.GetMaxTokens(),
+	}
+}
+
 
 type ChatMsg interface {
 	openai.ChatCompletionMessage | QwenMessage | SparkMessage | *genai.Content
