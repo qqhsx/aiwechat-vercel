@@ -23,21 +23,18 @@ const (
 	Bot_Type_Qwen    = "qwen"
 	Bot_Type_Gemini  = "gemini"
 	Bot_Type_Keyword = "keyword"
-	Bot_Type_Image   = "image" // 新增图床机器人类型
 	AdminUsersKey    = "ADMIN_USERS"
 	Bot_Type_Claude  = "claude"
 
 	KeywordMatchModeKey = "KEYWORD_MATCH_MODE"
 	MatchModePartial    = "partial"
 	MatchModeFull       = "full"
-
-	Wx_Command_Image = "/image" // 新增图床命令
 )
 
 var (
 	Cache sync.Map
 
-	Support_Bots = []string{Bot_Type_Gpt, Bot_Type_Spark, Bot_Type_Qwen, Bot_Type_Gemini, Bot_Type_Claude, Bot_Type_Keyword, Bot_Type_Image}
+	Support_Bots = []string{Bot_Type_Gpt, Bot_Type_Spark, Bot_Type_Qwen, Bot_Type_Gemini, Bot_Type_Claude, Bot_Type_Keyword}
 )
 
 func IsSupportPrompt(botType string) bool {
@@ -60,8 +57,6 @@ func CheckBotConfig(botType string) (actualotType string, err error) {
 		err = CheckGeminiConfig()
 	case Bot_Type_Keyword:
 		err = nil // 本地实现，不需要外部配置
-	case Bot_Type_Image:
-		err = nil // 本地实现，不需要外部配置
 	case Bot_Type_Claude:
 		err = CheckClaudeConfig()
 	}
@@ -77,7 +72,6 @@ func CheckAllBotConfig() (botType string, checkRes map[string]bool) {
 		Bot_Type_Qwen:    true,
 		Bot_Type_Gemini:  true,
 		Bot_Type_Keyword: true, // 增加对关键词模式的检查
-		Bot_Type_Image:   true, // 增加对图床模式的检查
 		Bot_Type_Claude:  true,
 	}
 

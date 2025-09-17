@@ -35,19 +35,15 @@ var actionMap = map[string]func(param, userId string) string{
 	config.Wx_Command_Keyword: func(param, userId string) string {
 		return SwitchUserBot(userId, config.Bot_Type_Keyword)
 	},
-	// 新增一个切换到图床机器人的命令
-	config.Wx_Command_Image: func(param, userId string) string {
-		return SwitchUserBot(userId, config.Bot_Type_Image)
-	},
 	config.Wx_Command_AI: func(param, userId string) string {
 		// 切换回默认AI模式
 		lastAIBot, err := db.GetLastAIBot(userId)
-		if err == nil && slices.Contains(config.Support_Bots, lastAIBot) && lastAIBot != config.Bot_Type_Keyword && lastAIBot != config.Bot_Type_Echo && lastAIBot != config.Bot_Type_Image {
+		if err == nil && slices.Contains(config.Support_Bots, lastAIBot) && lastAIBot != config.Bot_Type_Keyword && lastAIBot != config.Bot_Type_Echo {
 			return SwitchUserBot(userId, lastAIBot)
 		}
 
 		defaultBotType := config.GetBotType()
-		if !slices.Contains(config.Support_Bots, defaultBotType) || defaultBotType == config.Bot_Type_Keyword || defaultBotType == config.Bot_Type_Echo || defaultBotType == config.Bot_Type_Image {
+		if !slices.Contains(config.Support_Bots, defaultBotType) || defaultBotType == config.Bot_Type_Keyword || defaultBotType == config.Bot_Type_Echo {
 			defaultBotType = config.Bot_Type_Echo
 		}
 		return SwitchUserBot(userId, defaultBotType)
@@ -168,7 +164,7 @@ func (s SimpleChat) HandleMediaMsg(msg *message.MixMessage) string {
 
 func SwitchUserBot(userId string, botType string) string {
 	// 如果是切换到AI模型，则保存上次使用的AI模型
-	if botType != config.Bot_Type_Keyword && botType != config.Bot_Type_Echo && botType != config.Bot_Type_Image {
+	if botType != config.Bot_Type_Keyword && botType != config.Bot_Type_Echo {
 		db.SetLastAIBot(userId, botType)
 	}
 	if _, err := config.CheckBotConfig(botType); err != nil {
@@ -415,29 +411,11 @@ func GetChatBot(botType string) BaseChat {
 			url:       config.GetClaudeUrl(),
 			maxTokens: maxTokens,
 		}
-	case config.Bot_Type_Image: // 新增图床机器人
-		return &ImageChat{}
 	default:
 		return &Echo{}
 	}
 }
 
-// 新增 ImageChat 结构体和方法
-type ImageChat struct {
-	SimpleChat
-}
-
-func (i *ImageChat) Chat(userId string, msg string, imageURL ...string) string {
-	// 在图床模式下，忽略所有文本聊天
-	return "图床模式下请直接发送图片，或使用 /ai 切换回AI对话模式"
-}
-
-func (i *ImageChat) HandleMediaMsg(msg *message.MixMessage) string {
-	if msg.MsgType == message.MsgTypeImage {
-		return msg.PicURL
-	}
-	return "图床模式下不支持其他消息类型，请直接发送图片。"
-}
 
 type ChatMsg interface {
 	openai.ChatCompletionMessage | QwenMessage | SparkMessage | *genai.Content

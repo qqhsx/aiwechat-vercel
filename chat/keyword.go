@@ -43,6 +43,9 @@ func (k *KeywordChat) Chat(userID string, msg string, imageURL ...string) string
 }
 
 func (k *KeywordChat) HandleMediaMsg(msg *message.MixMessage) string {
+	if msg.MsgType == message.MsgTypeImage {
+		return msg.PicURL
+	}
 	if msg.MsgType == message.MsgTypeEvent {
 		// 将事件消息委托给通用的 SimpleChat 处理
 		simpleChat := SimpleChat{}

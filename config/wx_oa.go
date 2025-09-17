@@ -47,7 +47,7 @@ const (
 )
 
 var (
-	Wx_Commands = []string{Wx_Command_Help, Wx_Command_Gpt, Wx_Command_Spark, Wx_Command_Qwen, Wx_Command_Gemini, Wx_Command_Claude, Wx_Command_AddMe, Wx_Command_Image}
+	Wx_Commands = []string{Wx_Command_Help, Wx_Command_Gpt, Wx_Command_Spark, Wx_Command_Qwen, Wx_Command_Gemini, Wx_Command_Claude, Wx_Command_AddMe}
 )
 
 func GetWxToken() string {
@@ -66,7 +66,7 @@ func GetWxSubscribeReply() string {
 func GetWxHelpReply() string {
 	helpMsg := os.Getenv(Wx_Help_Reply_key)
 	if helpMsg == "" {
-		helpMsg = "输入以下命令进行对话\n/help：查看帮助\n/gpt：与GPT对话\n/spark：与星火对话\n/qwen：与通义千问对话\n/gemini：与gemini对话\n/claude：与claude对话\n/image：切换到图床模式\n/keyword：切换到关键词回复模式\n/ai：切换到AI对话模式\n/addkeyword 关键词:回复内容：添加关键词\n/delkeyword 关键词：删除关键词\n/listkeywords：查看关键词列表\n" +
+		helpMsg = "输入以下命令进行对话\n/help：查看帮助\n/gpt：与GPT对话\n/spark：与星火对话\n/qwen：与通义千问对话\n/gemini：与gemini对话\n/claude：与claude对话\n/keyword：切换到关键词回复模式\n/ai：切换到AI对话模式\n/addkeyword 关键词:回复内容：添加关键词\n/delkeyword 关键词：删除关键词\n/listkeywords：查看关键词列表\n" +
 			"/prompt 你的prompt: 设置system prompt\n/getpt: 获取当前设置prompt\n/cpt: 清除当前设置prompt\n" +
 			"/setmodel model: 设置自定义model\n/setmodel: 重置model为默认值\n/getmodel: 获取当前model\n" +
 			"/clear:清除历史对话\n" + "/ta 代办事项1:设置todo\n" + "/tl:获取代办列表\n" + "/td 2:删除索引代办事件\n" + "/cb 代币对:查询价格" +
@@ -109,8 +109,6 @@ func GetBotWelcomeReply(botType string) string {
 		return GetQwenWelcomeReply()
 	case Bot_Type_Keyword:
 		return "已切换到关键词回复模式，请发送消息进行匹配。\n使用 /ai 切换回 AI 对话。"
-	case Bot_Type_Image:
-		return "已切换到图床模式，请直接发送图片。\n使用 /ai 切换回 AI 对话。"
 	case Bot_Type_Claude:
 		return GetClaudeWelcomeReply()
 	}
