@@ -3,7 +3,6 @@ package api
 import (
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/pwh-pwh/aiwechat-vercel/chat"
 	"github.com/pwh-pwh/aiwechat-vercel/config"
