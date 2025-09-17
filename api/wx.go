@@ -27,21 +27,33 @@ func Wx(rw http.ResponseWriter, req *http.Request) {
 	// 传入request和responseWriter
 	server := officialAccount.GetServer(req, rw)
 	server.SkipValidate(true)
-	//设置接收消息的处理方法
+	// 设置接收消息的处理方法
 	server.SetMessageHandler(func(msg *message.MixMessage) *message.Reply {
-		//回复消息：演示回复用户发送的消息
+		// 回复消息：演示回复用户发送的消息
 		replyMsg := handleWxMessage(msg)
 		text := message.NewText(replyMsg)
 		return &message.Reply{MsgType: message.MsgTypeText, MsgData: text}
 	})
 
-	//处理消息接收以及回复
+	// 处理消息接收以及回复
 	err := server.Serve()
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Serve error:", err)
 		return
 	}
-	//发送回复的消息
+
+	// ===== 在 Send 前打印最终 XML =====
+	replyMsg := server.GetResponse()
+	if replyMsg != nil {
+		if xmlBytes, err := replyMsg.ToXML(); err == nil {
+			fmt.Println("Final XML response:\n", string(xmlBytes))
+		} else {
+			fmt.Println("Error serializing reply to XML:", err)
+		}
+	}
+	// =================================
+
+	// 发送回复的消息
 	server.Send()
 }
 
@@ -72,10 +84,10 @@ func handleWxMessage(msg *message.MixMessage) (replyMsg string) {
 			return actionReply
 		}
 	}
-	
+
 	// 如果不是命令，再根据用户当前选择的模式处理
 	bot := chat.GetChatBot(config.GetUserBotType(userId))
-	
+
 	if msgType == message.MsgTypeText {
 		replyMsg = bot.Chat(userId, msgContent)
 	} else if msgType == message.MsgTypeImage {
@@ -92,7 +104,7 @@ func handleWxMessage(msg *message.MixMessage) (replyMsg string) {
 			replyMsg = fmt.Sprintf("您当前的 %s 机器人只支持文本输入。如需图片解读，请使用 /gemini 切换到 Gemini 机器人。", botType)
 			return
 		}
-		
+
 		// 如果当前是 Gemini 模式，则进行图片解读
 		geminiReply := bot.Chat(userId, "", msg.PicURL)
 		replyBuilder := strings.Builder{}
