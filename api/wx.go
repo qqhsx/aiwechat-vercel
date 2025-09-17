@@ -13,6 +13,7 @@ import (
 	"github.com/silenceper/wechat/v2/officialaccount/message"
 )
 
+// Wx 处理微信公众号请求
 func Wx(rw http.ResponseWriter, req *http.Request) {
 	wc := wechat.NewWechat()
 	memory := cache.NewMemory()
@@ -27,36 +28,45 @@ func Wx(rw http.ResponseWriter, req *http.Request) {
 	// 传入request和responseWriter
 	server := officialAccount.GetServer(req, rw)
 	server.SkipValidate(true)
+
 	// 设置接收消息的处理方法
 	server.SetMessageHandler(func(msg *message.MixMessage) *message.Reply {
-		// 回复消息：演示回复用户发送的消息
+		// 回复消息：由 handleWxMessage 生成最终文本
 		replyMsg := handleWxMessage(msg)
+
+		// debug: 打印即将回复的纯文本长度，便于检查是否过长
+		fmt.Printf("Will reply to user %s, reply length=%d\n", string(msg.FromUserName), len(replyMsg))
+
+		// 构造文本回复
 		text := message.NewText(replyMsg)
 		return &message.Reply{MsgType: message.MsgTypeText, MsgData: text}
 	})
 
 	// 处理消息接收以及回复
-	err := server.Serve()
-	if err != nil {
-		fmt.Println("Serve error:", err)
+	if err := server.Serve(); err != nil {
+		fmt.Println("server.Serve error:", err)
 		return
 	}
 
-	// ===== 在 Send 前打印最终 XML =====
-	replyMsg := server.GetResponse()
-	if replyMsg != nil {
-		if xmlBytes, err := replyMsg.ToXML(); err == nil {
-			fmt.Println("Final XML response:\n", string(xmlBytes))
-		} else {
-			fmt.Println("Error serializing reply to XML:", err)
-		}
+	// 发送回复
+	if err := server.Send(); err != nil {
+		// Send 出错也打印出来，便于排查
+		fmt.Println("server.Send error:", err)
 	}
-	// =================================
 
-	// 发送回复的消息
-	server.Send()
+	// —— 调试用：输出最终发送给微信的完整 XML —— //
+	// silenceper/wechat 的 Server 结构会把最终的 raw xml 放到 ResponseRawXMLMsg 字段
+	if len(server.ResponseRawXMLMsg) > 0 {
+		fmt.Printf("Final response XML:\n%s\n", string(server.ResponseRawXMLMsg))
+	} else if server.ResponseMsg != nil {
+		// 如果没有 raw xml，至少打印出 ResponseMsg 的结构，便于分析
+		fmt.Printf("ResponseMsg (structure): %#v\n", server.ResponseMsg)
+	} else {
+		fmt.Println("No response captured: ResponseRawXMLMsg is empty and ResponseMsg is nil")
+	}
 }
 
+// handleWxMessage 保持你原先的逻辑
 func handleWxMessage(msg *message.MixMessage) (replyMsg string) {
 	msgType := msg.MsgType
 	msgContent := msg.Content
