@@ -11,7 +11,7 @@ import (
 	"github.com/bytedance/sonic"
 )
 
-const TMDB_API_URL = "https://api.themoviedb.org/3/movie/now_playing?api_key=%s&language=%s"
+const TMDB_API_URL = "https://api.themoviedb.org/3/movie/%s?api_key=%s&language=%s"
 
 // TMDbNowPlayingResponse represents the overall API response
 type TMDbNowPlayingResponse struct {
@@ -24,18 +24,38 @@ type TMDbMovie struct {
 	ReleaseDate string `json:"release_date"`
 }
 
-// GetNowPlayingMovies fetches a list of movies currently in theaters from TMDb
-func GetNowPlayingMovies() (string, error) {
+// GetMoviesByCategory fetches a list of movies by category from TMDb
+func GetMoviesByCategory(category string) (string, error) {
 	apiKey := os.Getenv("TMDB_API_KEY")
 	if apiKey == "" {
 		return "TMDB_API_KEY环境变量未设置。", nil
+	}
+
+	// Map category to API endpoint
+	var endpoint string
+	var title string
+	switch category {
+	case "now_playing":
+		endpoint = "now_playing"
+		title = "正在上映的电影"
+	case "popular":
+		endpoint = "popular"
+		title = "流行电影"
+	case "top_rated":
+		endpoint = "top_rated"
+		title = "热门电影"
+	case "upcoming":
+		endpoint = "upcoming"
+		title = "即将上映的电影"
+	default:
+		return "不支持的电影类别。", nil
 	}
 
 	// You can customize the language. For this example, let's use simplified Chinese.
 	language := "zh-CN"
 
 	// Create the full request URL
-	url := fmt.Sprintf(TMDB_API_URL, apiKey, language)
+	url := fmt.Sprintf(TMDB_API_URL, endpoint, apiKey, language)
 	
 	resp, err := http.Get(url)
 	if err != nil {
@@ -60,14 +80,14 @@ func GetNowPlayingMovies() (string, error) {
 	}
 
 	if len(moviesResp.Results) == 0 {
-		return "未找到正在上映的电影。", nil
+		return fmt.Sprintf("未找到%s。", title), nil
 	}
 
 	var resultBuilder strings.Builder
-	resultBuilder.WriteString("正在上映的电影：\n")
+	resultBuilder.WriteString(fmt.Sprintf("%s：\n", title))
 	
-	// Limit to top 20 results to avoid long messages
-	limit := 20
+	// Limit to top 5 results to avoid long messages
+	limit := 5
 	if len(moviesResp.Results) < limit {
 		limit = len(moviesResp.Results)
 	}

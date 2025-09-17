@@ -54,10 +54,29 @@ func (k *KeywordChat) HandleMediaMsg(msg *message.MixMessage) string {
 // processReply handles dynamic keyword replies based on special markers.
 func (k *KeywordChat) processReply(userID string, reply string) string {
 	// Check for a special marker to trigger dynamic behavior
-	if reply == "__NOW_PLAYING__" {
-		movies, err := client.GetNowPlayingMovies()
+	switch reply {
+	case "__NOW_PLAYING__":
+		movies, err := client.GetMoviesByCategory("now_playing")
 		if err != nil {
 			return "获取正在上映电影列表失败：" + err.Error()
+		}
+		return movies
+	case "__POPULAR__":
+		movies, err := client.GetMoviesByCategory("popular")
+		if err != nil {
+			return "获取流行电影列表失败：" + err.Error()
+		}
+		return movies
+	case "__TOP_RATED__":
+		movies, err := client.GetMoviesByCategory("top_rated")
+		if err != nil {
+			return "获取热门电影列表失败：" + err.Error()
+		}
+		return movies
+	case "__UPCOMING__":
+		movies, err := client.GetMoviesByCategory("upcoming")
+		if err != nil {
+			return "获取即将上映电影列表失败：" + err.Error()
 		}
 		return movies
 	}
