@@ -66,25 +66,37 @@ func handleWxMessage(msg *message.MixMessage) (replyMsg string) {
 		return
 	}
 
+	// 首先，检查并处理所有命令
+	if msgType == message.MsgTypeText {
+		if actionReply, isAction := chat.DoAction(userId, msgContent); isAction {
+			return actionReply
+		}
+	}
+	
+	// 如果不是命令，再根据用户当前选择的模式处理
 	bot := chat.GetChatBot(config.GetUserBotType(userId))
+	
 	if msgType == message.MsgTypeText {
 		replyMsg = bot.Chat(userId, msgContent)
 	} else if msgType == message.MsgTypeImage {
-		// 如果当前 bot 是关键词模式，则只返回图片链接
+		// 检查当前机器人是否支持图片输入
 		if _, ok := bot.(*chat.KeywordChat); ok {
+			// 关键词模式，直接返回图片链接
 			replyMsg = bot.HandleMediaMsg(msg)
 			return
 		}
+
+		// 检查当前的 bot 是否是支持多模态的AI模型
+		if botType := config.GetUserBotType(userId); botType != config.Bot_Type_Gemini {
+			// 当前AI模式不支持多模态，返回提示
+			replyMsg = fmt.Sprintf("您当前的 %s 机器人只支持文本输入。如需图片解读，请使用 /gemini 切换到 Gemini 机器人。", botType)
+			return
+		}
 		
-		// 如果是其他 AI bot，则统一使用 Gemini 进行图片解读
-		geminiBot := chat.GetGeminiChatBot()
-		geminiReply := geminiBot.Chat(userId, "", msg.PicURL)
-		
-		// 拼接回复内容，包括图片链接和 Gemini 的解读
-		var replyBuilder strings.Builder
-		replyBuilder.WriteString("图片链接：\n")
-		replyBuilder.WriteString(msg.PicURL)
-		replyBuilder.WriteString("\n\nGemini 图片解读：\n")
+		// 如果当前是 Gemini 模式，则进行图片解读
+		geminiReply := bot.Chat(userId, "", msg.PicURL)
+		replyBuilder := strings.Builder{}
+		replyBuilder.WriteString("Gemini 图片解读：\n")
 		replyBuilder.WriteString(geminiReply)
 		replyMsg = replyBuilder.String()
 	} else {
