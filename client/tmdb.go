@@ -86,8 +86,8 @@ func GetMoviesByCategory(category string) (string, error) {
 	var resultBuilder strings.Builder
 	resultBuilder.WriteString(fmt.Sprintf("%s：\n", title))
 	
-	// Limit to top 5 results to avoid long messages
-	limit := 5
+	// Limit to top 20 results to avoid long messages
+	limit := 20
 	if len(moviesResp.Results) < limit {
 		limit = len(moviesResp.Results)
 	}
