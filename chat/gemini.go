@@ -131,18 +131,24 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 		newParts = append(newParts, genai.Text(msg))
 	}
 	
-	// 获取完整的聊天历史，包括当前消息
-	var msgs = GetMsgListWithDb(config.Bot_Type_Gemini, userId, &genai.Content{
-		Parts: newParts,
-		Role: GeminiUser,
-	}, g.toDbMsg, g.toChatMsg)
-
-	// 将 []*genai.Content 转换为 []genai.Part
 	var historyParts []genai.Part
-	for _, m := range msgs {
-		historyParts = append(historyParts, m.Parts...)
+	
+	// 如果是纯图片消息，则不调用历史记录，直接使用新创建的parts
+	if msg == "" && len(imageURL) > 0 {
+		historyParts = newParts
+	} else {
+		// 如果是文本消息或者图文混排，则获取完整的聊天历史，包括当前消息
+		var msgs = GetMsgListWithDb(config.Bot_Type_Gemini, userId, &genai.Content{
+			Parts: newParts,
+			Role: GeminiUser,
+		}, g.toDbMsg, g.toChatMsg)
+		
+		// 将 []*genai.Content 转换为 []genai.Part
+		for _, m := range msgs {
+			historyParts = append(historyParts, m.Parts...)
+		}
 	}
-
+	
 	var resp *genai.GenerateContentResponse
 	
 	// 加入智能重试机制
@@ -187,7 +193,7 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 	}
 
 	// 将 AI 的回复添加到消息历史并保存
-	msgs = append(msgs, &genai.Content{
+	msgs := append(msgs, &genai.Content{
 		Parts: []genai.Part{genai.Text(responseText)},
 		Role: GeminiBot,
 	})
