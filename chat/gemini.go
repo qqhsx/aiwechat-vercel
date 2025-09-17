@@ -2,13 +2,13 @@ package chat
 
 import (
 	"context"
-	"io"
-	"net/http"
 	"encoding/base64"
 	"fmt"
-	"time"
+	"io"
+	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/generative-ai-go/genai"
 	"github.com/pwh-pwh/aiwechat-vercel/config"
@@ -95,7 +95,7 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 	}
 
 	var newParts []genai.Part
-	
+
 	// 处理图片 URL
 	if len(imageURL) > 0 && imageURL[0] != "" {
 		// 1. 发起HTTP请求下载图片
@@ -109,19 +109,19 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Sprintf("下载图片失败，状态码: %d", resp.StatusCode)
 		}
-	
+
 		// 3. 读取图片数据到内存
 		imageData, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return "读取图片数据失败: " + err.Error()
 		}
-		
+
 		// 4. 获取图片MIME类型
 		mimeType := http.DetectContentType(imageData)
-		
+
 		// 5. 创建genai.Blob
 		imagePart := genai.ImageData(mimeType, imageData)
-	
+
 		// 6. 将图片数据添加到parts中
 		newParts = append(newParts, imagePart)
 	}
@@ -130,27 +130,29 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 	if msg != "" {
 		newParts = append(newParts, genai.Text(msg))
 	}
-	
+
 	var historyParts []genai.Part
-	
+	var msgs []*genai.Content
+	var resp *genai.GenerateContentResponse
+
 	// 如果是纯图片消息，则不调用历史记录，直接使用新创建的parts
 	if msg == "" && len(imageURL) > 0 {
 		historyParts = newParts
+		// 初始化msgs，以便后续添加AI回复和保存
+		msgs = []*genai.Content{{Parts: newParts, Role: GeminiUser}}
 	} else {
 		// 如果是文本消息或者图文混排，则获取完整的聊天历史，包括当前消息
-		var msgs = GetMsgListWithDb(config.Bot_Type_Gemini, userId, &genai.Content{
+		msgs = GetMsgListWithDb(config.Bot_Type_Gemini, userId, &genai.Content{
 			Parts: newParts,
-			Role: GeminiUser,
+			Role:  GeminiUser,
 		}, g.toDbMsg, g.toChatMsg)
-		
+
 		// 将 []*genai.Content 转换为 []genai.Part
 		for _, m := range msgs {
 			historyParts = append(historyParts, m.Parts...)
 		}
 	}
-	
-	var resp *genai.GenerateContentResponse
-	
+
 	// 加入智能重试机制
 	for i := 0; i < 3; i++ {
 		// 每次都发送完整的历史消息列表
@@ -158,7 +160,7 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 		if err == nil {
 			break
 		}
-		
+
 		// 检查是否是 429 错误
 		if strings.Contains(err.Error(), "429") {
 			const retryPrefix = "retry in "
@@ -173,7 +175,7 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 					}
 				}
 			}
-			
+
 			fmt.Printf("Encountered 429 error, retrying with exponential backoff...\n")
 			time.Sleep(time.Duration(i+1) * time.Second)
 			continue
@@ -193,9 +195,9 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 	}
 
 	// 将 AI 的回复添加到消息历史并保存
-	msgs := append(msgs, &genai.Content{
+	msgs = append(msgs, &genai.Content{
 		Parts: []genai.Part{genai.Text(responseText)},
-		Role: GeminiBot,
+		Role:  GeminiBot,
 	})
 	SaveMsgListWithDb(config.Bot_Type_Gemini, userId, msgs, g.toDbMsg)
 
