@@ -24,21 +24,31 @@ type GeminiChat struct {
 }
 
 func (s *GeminiChat) toDbMsg(msg *genai.Content) db.Msg {
-	// 目前只将文本内容存入数据库
-	var textContent string
+	// 将 genai.Content 转换为新的 db.Msg 结构
+	var parts []db.ContentPart
 	for _, part := range msg.Parts {
-		if text, ok := part.(genai.Text); ok {
-			textContent += string(text)
+		switch v := part.(type) {
+		case genai.Text:
+			parts = append(parts, db.ContentPart{Type: "text", Data: string(v)})
+		case genai.FileURI:
+			parts = append(parts, db.ContentPart{Type: "image", Data: string(v), MIMEType: "image/jpeg"}) // Placeholder MIME
 		}
 	}
 	return db.Msg{
-		Role: msg.Role,
-		Msg:  textContent,
+		Role:  msg.Role,
+		Parts: parts,
 	}
 }
 
 func (s *GeminiChat) toChatMsg(msg db.Msg) *genai.Content {
-	return &genai.Content{Parts: []genai.Part{genai.Text(msg.Msg)}, Role: msg.Role}
+	// 将新的 db.Msg 结构转换回 genai.Content
+	var parts []genai.Part
+	for _, part := range msg.Parts {
+		if part.Type == "text" {
+			parts = append(parts, genai.Text(part.Data))
+		}
+	}
+	return &genai.Content{Parts: parts, Role: msg.Role}
 }
 
 func (s *GeminiChat) getModel(userId string) string {
@@ -48,31 +58,39 @@ func (s *GeminiChat) getModel(userId string) string {
 	return "gemini-2.0-flash"
 }
 
+// HandleMediaMsg 处理所有多媒体消息（图片、语音等）
 func (s *GeminiChat) HandleMediaMsg(msg *message.MixMessage) string {
-	return WithTimeChat(string(msg.FromUserName), msg.MsgId, func(userId, msgId string) string {
-		var parts []genai.Part
-		// 优先处理图片
-		if msg.PicURL != "" {
-			parts = append(parts, genai.FileURI(msg.PicURL))
-		}
-		// 处理文本消息（如果图片消息中包含文字描述）
-		if msg.Content != "" {
-			parts = append(parts, genai.Text(msg.Content))
-		}
-		if len(parts) == 0 {
-			return "无法处理空消息"
-		}
-		return s.chatWithParts(string(msg.FromUserName), parts)
-	})
+	if msg.MsgType == message.MsgTypeImage {
+		return WithTimeChat(string(msg.FromUserName), msg.MsgID, func(userId, msgID string) string {
+			var parts []genai.Part
+			// 添加图片部分
+			parts = append(parts, genai.Part(genai.FileURI(msg.PicURL)))
+			// 添加文本部分（如果用户同时发了文字）
+			if msg.Content != "" {
+				parts = append(parts, genai.Text(msg.Content))
+			}
+			return s.chatWithParts(string(msg.FromUserName), parts)
+		})
+	}
+	// 委托给默认处理方法
+	simpleChat := SimpleChat{}
+	return simpleChat.HandleMediaMsg(msg)
 }
 
-func (s *GeminiChat) Chat(userId string, msg string) string {
+// Chat 处理纯文本消息
+func (s *GeminiChat) Chat(userId string, msg string, imageURL ...string) string {
 	r, flag := DoAction(userId, msg)
 	if flag {
 		return r
 	}
 	return WithTimeChat(userId, msg, func(userId, msg string) string {
-		return s.chatWithParts(userId, []genai.Part{genai.Text(msg)})
+		var parts []genai.Part
+		parts = append(parts, genai.Text(msg))
+		// 处理图片 URL
+		if len(imageURL) > 0 && imageURL[0] != "" {
+			parts = append(parts, genai.Part(genai.FileURI(imageURL[0])))
+		}
+		return s.chatWithParts(userId, parts)
 	})
 }
 
@@ -90,14 +108,14 @@ func (s *GeminiChat) chatWithParts(userId string, parts []genai.Part) string {
 	// 初始化聊天会话
 	cs := model.StartChat()
 	
-	// 从数据库加载历史消息，并将其转换为 genai.Content 格式
+	// 从数据库加载历史消息
 	var history []*genai.Content
 	if db.ChatDbInstance != nil {
 		dbMsgs, err := db.ChatDbInstance.GetMsgList(config.Bot_Type_Gemini, userId)
 		if err == nil {
 			for _, dbMsg := range dbMsgs {
 				// 跳过没有内容的系统消息或空消息
-				if strings.TrimSpace(dbMsg.Msg) != "" {
+				if len(dbMsg.Parts) > 0 && dbMsg.Role != "system" {
 					history = append(history, s.toChatMsg(dbMsg))
 				}
 			}
