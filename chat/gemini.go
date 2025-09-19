@@ -66,13 +66,21 @@ func (s *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 	if flag {
 		return r
 	}
-	return WithTimeChat(userId, strconv.FormatInt(msg.MsgID, 10), func(userId, msgID string) string {
+	// WithTimeChat的第二个参数需要是string类型，所以这里将用户消息ID转换为字符串
+	cacheKey := fmt.Sprintf("%s:%s", userId, strconv.FormatInt(msg.MsgID, 10))
+	if msg != "" {
+		cacheKey = fmt.Sprintf("%s:%s", userId, msg)
+	} else if len(imageURL) > 0 && imageURL[0] != "" {
+		cacheKey = fmt.Sprintf("%s:%s", userId, imageURL[0])
+	}
+
+	return WithTimeChat(userId, cacheKey, func(userId, key string) string {
 		var parts []genai.Part
 		if msg != "" {
 			parts = append(parts, genai.Text(msg))
 		}
 		if len(imageURL) > 0 && imageURL[0] != "" {
-			parts = append(parts, genai.NewPartFromURI(imageURL[0], "image/jpeg"))
+			parts = append(parts, genai.NewPartFromURI(imageURL[0]))
 		}
 		
 		if len(parts) == 0 {

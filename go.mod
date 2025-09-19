@@ -5,13 +5,13 @@ go 1.24.0
 require (
 	github.com/bytedance/sonic v1.12.3
 	github.com/go-redis/redis/v8 v8.11.5
-	github.com/google/generative-ai-go v0.20.1
 	github.com/gorilla/websocket v1.5.1
 	github.com/joho/godotenv v1.5.1
 	github.com/sashabaranov/go-openai v1.20.2
 	github.com/silenceper/wechat/v2 v2.1.6
 	golang.org/x/text v0.28.0
 	google.golang.org/api v0.249.0
+	google.golang.org/genai v0.11.0
 )
 
 require (
