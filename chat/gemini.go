@@ -2,13 +2,14 @@ package chat
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"encoding/base64"
 	"fmt"
-	"strconv"
 
 	"github.com/google/generative-ai-go/genai"
 	"github.com/pwh-pwh/aiwechat-vercel/config"
 	"github.com/pwh-pwh/aiwechat-vercel/db"
-	"github.com/silenceper/wechat/v2/officialaccount/message"
 	"google.golang.org/api/option"
 )
 
@@ -24,131 +25,136 @@ type GeminiChat struct {
 }
 
 func (s *GeminiChat) toDbMsg(msg *genai.Content) db.Msg {
-	var parts []db.ContentPart
+	dbMsg := db.Msg{
+		Role: msg.Role,
+		Parts: []db.ContentPart{},
+	}
 	for _, part := range msg.Parts {
 		switch v := part.(type) {
 		case genai.Text:
-			parts = append(parts, db.ContentPart{Type: "text", Data: string(v)})
-		case genai.FileData:
-			parts = append(parts, db.ContentPart{Type: "image", Data: v.URI, MIMEType: v.MIMEType})
+			dbMsg.Parts = append(dbMsg.Parts, db.ContentPart{Type: "text", Data: string(v)})
+		case genai.Blob:
+			// 将图片数据编码为 Base64 字符串
+			encodedData := base64.StdEncoding.EncodeToString(v.Data)
+			// 这里硬编码了MIME类型，因为数据库中没有存储
+			dbMsg.Parts = append(dbMsg.Parts, db.ContentPart{Type: "image", Data: encodedData, MIMEType: v.MIMEType})
 		}
 	}
-	return db.Msg{
-		Role:  msg.Role,
-		Parts: parts,
-	}
+	return dbMsg
 }
 
 func (s *GeminiChat) toChatMsg(msg db.Msg) *genai.Content {
-	var parts []genai.Part
+	content := &genai.Content{
+		Role: msg.Role,
+		Parts: []genai.Part{},
+	}
 	for _, part := range msg.Parts {
-		if part.Type == "text" {
-			parts = append(parts, genai.Text(part.Data))
+		switch part.Type {
+		case "text":
+			content.Parts = append(content.Parts, genai.Text(part.Data))
+		case "image":
+			// 解码 Base64 字符串以获取图片数据
+			imageData, err := base64.StdEncoding.DecodeString(part.Data)
+			if err != nil {
+				fmt.Printf("Base64 decoding failed: %v", err)
+				continue
+			}
+			// 将数据转换为 genai.Blob
+			content.Parts = append(content.Parts, genai.ImageData(part.MIMEType, imageData))
 		}
 	}
-	return &genai.Content{Parts: parts, Role: msg.Role}
+	return content
 }
 
 func (s *GeminiChat) getModel(userId string) string {
 	if model, err := db.GetModel(userId, config.Bot_Type_Gemini); err == nil && model != "" {
 		return model
 	}
-	return "gemini-2.0-flash"
+	// Use a valid model name for a recent version
+	return "gemini-1.5-flash-latest"
 }
 
-func (s *GeminiChat) HandleMediaMsg(msg *message.MixMessage) string {
-	simpleChat := SimpleChat{}
-	return simpleChat.HandleMediaMsg(msg)
-}
-
-func (s *GeminiChat) Chat(userId string, msg string, imageURL ...string) string {
+func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string {
 	r, flag := DoAction(userId, msg)
 	if flag {
 		return r
 	}
-	
-	cacheKey := fmt.Sprintf("%s:%s", userId, msg)
-	if msg == "" && len(imageURL) > 0 && imageURL[0] != "" {
-		cacheKey = fmt.Sprintf("%s:%s", userId, imageURL[0])
-	}
-	
-	return WithTimeChat(userId, cacheKey, func(userId, key string) string {
-		var parts []genai.Part
-		if msg != "" {
-			parts = append(parts, genai.Text(msg))
-		}
-		if len(imageURL) > 0 && imageURL[0] != "" {
-			parts = append(parts, genai.NewPartFromURI(imageURL[0], "image/jpeg"))
-		}
-		
-		if len(parts) == 0 {
-			return "无法处理空消息"
-		}
-		
-		return s.chatWithParts(userId, parts)
-	})
-}
 
-func (s *GeminiChat) chatWithParts(userId string, parts []genai.Part) string {
 	ctx := context.Background()
-	client, err := genai.NewClient(ctx, option.WithAPIKey(s.key))
+	client, err := genai.NewClient(ctx, option.WithAPIKey(g.key))
 	if err != nil {
 		return err.Error()
 	}
 	defer client.Close()
-	model := client.GenerativeModel(s.getModel(userId))
-	if s.maxTokens > 0 {
-		model.SetMaxOutputTokens(int32(s.maxTokens))
+	model := client.GenerativeModel(g.getModel(userId))
+	if g.maxTokens > 0 {
+		model.SetMaxOutputTokens(int32(g.maxTokens))
 	}
 	cs := model.StartChat()
+
+	var parts []genai.Part
 	
-	var history []*genai.Content
-	if db.ChatDbInstance != nil {
-		dbMsgs, err := db.ChatDbInstance.GetMsgList(config.Bot_Type_Gemini, userId)
-		if err == nil {
-			for _, dbMsg := range dbMsgs {
-				if len(dbMsg.Parts) > 0 && dbMsg.Role != "system" {
-					history = append(history, s.toChatMsg(dbMsg))
-				}
-			}
+	// 处理图片 URL
+	if len(imageURL) > 0 && imageURL[0] != "" {
+		// 1. 发起HTTP请求下载图片
+		resp, err := http.Get(imageURL[0])
+		if err != nil {
+			return "下载图片失败: " + err.Error()
 		}
-	}
-	cs.History = history
+		defer resp.Body.Close()
+
+		// 2. 检查响应状态码
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Sprintf("下载图片失败，状态码: %d", resp.StatusCode)
+		}
 	
+		// 3. 读取图片数据到内存
+		imageData, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return "读取图片数据失败: " + err.Error()
+		}
+		
+		// 4. 获取图片MIME类型
+		mimeType := http.DetectContentType(imageData)
+		
+		// 5. 创建genai.Blob
+		imagePart := genai.ImageData(mimeType, imageData) 
+	
+		// 6. 将图片数据添加到parts中
+		parts = append(parts, imagePart)
+	}
+
+	// 将文本消息添加到 parts 中，如果文本消息存在
+	if msg != "" {
+		parts = append(parts, genai.Text(msg))
+	}
+
+	var msgs = GetMsgListWithDb(config.Bot_Type_Gemini, userId, &genai.Content{
+		Parts: parts,
+		Role: GeminiUser,
+	}, g.toDbMsg, g.toChatMsg)
+
+	if len(msgs) > 1 {
+		cs.History = msgs[:len(msgs)-1]
+	}
+
 	resp, err := cs.SendMessage(ctx, parts...)
 	if err != nil {
 		return err.Error()
 	}
-	
-	if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
-		return "没有收到有效的回复"
+
+	var responseText string
+	for _, part := range resp.Candidates[0].Content.Parts {
+		if text, ok := part.(genai.Text); ok {
+			responseText += string(text)
+		}
 	}
-	
-	textPart, ok := resp.Candidates[0].Content.Parts[0].(genai.Text)
-	if !ok {
-		return "收到了非文本格式的回复"
-	}
-	
-	responseText := string(textPart)
-	
-	newHistory := append(history, &genai.Content{
-		Parts: parts,
-		Role: GeminiUser,
-	})
-	newHistory = append(newHistory, &genai.Content{
+
+	msgs = append(msgs, &genai.Content{
 		Parts: []genai.Part{genai.Text(responseText)},
 		Role: GeminiBot,
 	})
-	
-	if db.ChatDbInstance != nil {
-		go func() {
-			var dbList []db.Msg
-			for _, msg := range newHistory {
-				dbList = append(dbList, s.toDbMsg(msg))
-			}
-			db.ChatDbInstance.SetMsgList(config.Bot_Type_Gemini, userId, dbList)
-		}()
-	}
-	
+
+	SaveMsgListWithDb(config.Bot_Type_Gemini, userId, msgs, g.toDbMsg)
 	return responseText
 }
