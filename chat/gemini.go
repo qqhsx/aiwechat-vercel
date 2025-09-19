@@ -75,8 +75,8 @@ func (s *GeminiChat) getModel(userId string) string {
 	return "gemini-1.5-flash-latest"
 }
 
-// NOTE: 修改 Chat 方法，增加了 voiceData 参数
-func (g *GeminiChat) Chat(userId string, msg string, imageURL string, voiceData []byte) string {
+// NOTE: 修改 Chat 方法签名，以匹配 BaseChat 接口
+func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string {
 	r, flag := DoAction(userId, msg)
 	if flag {
 		return r
@@ -97,9 +97,9 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL string, voiceData 
 	var parts []genai.Part
 	
 	// 处理图片 URL
-	if imageURL != "" {
+	if len(imageURL) > 0 && imageURL[0] != "" {
 		// 1. 发起HTTP请求下载图片
-		resp, err := http.Get(imageURL)
+		resp, err := http.Get(imageURL[0])
 		if err != nil {
 			return "下载图片失败: " + err.Error()
 		}
@@ -125,14 +125,6 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL string, voiceData 
 		// 6. 将图片数据添加到parts中
 		parts = append(parts, imagePart)
 	}
-
-	// NOTE: 新增代码，用于处理语音数据
-	if len(voiceData) > 0 {
-		mimeType := http.DetectContentType(voiceData)
-		voicePart := genai.FileData(mimeType, voiceData)
-		parts = append(parts, voicePart)
-	}
-
 
 	// 将文本消息添加到 parts 中，如果文本消息存在
 	if msg != "" {
@@ -166,5 +158,40 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL string, voiceData 
 	})
 
 	SaveMsgListWithDb(config.Bot_Type_Gemini, userId, msgs, g.toDbMsg)
+	return responseText
+}
+
+// NOTE: 新增 ChatWithVoice 方法，专门用于处理语音消息
+func (g *GeminiChat) ChatWithVoice(userId string, voiceData []byte) string {
+	ctx := context.Background()
+	client, err := genai.NewClient(ctx, option.WithAPIKey(g.key))
+	if err != nil {
+		return err.Error()
+	}
+	defer client.Close()
+	model := client.GenerativeModel(g.getModel(userId))
+	if g.maxTokens > 0 {
+		model.SetMaxOutputTokens(int32(g.maxTokens))
+	}
+	
+	mimeType := http.DetectContentType(voiceData)
+	voicePart := genai.Blob{MIMEType: mimeType, Data: voiceData}
+
+	resp, err := model.GenerateContent(ctx, voicePart)
+	if err != nil {
+		return err.Error()
+	}
+
+	var responseText string
+	for _, part := range resp.Candidates[0].Content.Parts {
+		if text, ok := part.(genai.Text); ok {
+			responseText += string(text)
+		}
+	}
+
+	// NOTE: 语音消息不保存对话历史，因为Gemini API对多模态输入有额外的token限制，
+	// 频繁使用可能导致请求失败。如果你想保存历史，需要修改toDbMsg和toChatMsg函数
+	// 以支持多模态内容。
+
 	return responseText
 }

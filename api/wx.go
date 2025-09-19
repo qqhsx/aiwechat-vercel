@@ -121,7 +121,8 @@ func handleWxMessage(msg *message.MixMessage, oa *wechat.OfficialAccount) (reply
 		}
 
 		// 如果当前是 Gemini 模式，则进行图片解读
-		geminiReply := bot.Chat(userId, "", msg.PicURL, nil)
+		geminiBot := chat.GetGeminiChatBot()
+		geminiReply := geminiBot.Chat(userId, "", msg.PicURL)
 		replyBuilder := strings.Builder{}
 		replyBuilder.WriteString("Gemini 图片解读：\n")
 		replyBuilder.WriteString(geminiReply)
@@ -149,7 +150,8 @@ func handleWxMessage(msg *message.MixMessage, oa *wechat.OfficialAccount) (reply
 		}
 
 		// 调用 Gemini 模型进行语音解读
-		geminiReply := bot.Chat(userId, "", "", voiceData)
+		geminiBot := chat.GetGeminiChatBot()
+		geminiReply := geminiBot.ChatWithVoice(userId, voiceData)
 		replyBuilder := strings.Builder{}
 		replyBuilder.WriteString("Gemini 语音解读：\n")
 		replyBuilder.WriteString(geminiReply)
