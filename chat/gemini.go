@@ -3,7 +3,7 @@ package chat
 import (
 	"context"
 	"fmt"
-	"strings"
+	"strconv"
 
 	"github.com/google/generative-ai-go/genai"
 	"github.com/pwh-pwh/aiwechat-vercel/config"
@@ -30,8 +30,8 @@ func (s *GeminiChat) toDbMsg(msg *genai.Content) db.Msg {
 		switch v := part.(type) {
 		case genai.Text:
 			parts = append(parts, db.ContentPart{Type: "text", Data: string(v)})
-		case genai.FileURI:
-			parts = append(parts, db.ContentPart{Type: "image", Data: string(v), MIMEType: "image/jpeg"}) // Placeholder MIME
+		case *genai.FileData:
+			parts = append(parts, db.ContentPart{Type: "image", Data: v.URI, MIMEType: v.MIMEType})
 		}
 	}
 	return db.Msg{
@@ -60,24 +60,13 @@ func (s *GeminiChat) getModel(userId string) string {
 
 // HandleMediaMsg 处理所有多媒体消息（图片、语音等）
 func (s *GeminiChat) HandleMediaMsg(msg *message.MixMessage) string {
-	if msg.MsgType == message.MsgTypeImage {
-		return WithTimeChat(string(msg.FromUserName), msg.MsgID, func(userId, msgID string) string {
-			var parts []genai.Part
-			// 添加图片部分
-			parts = append(parts, genai.Part(genai.FileURI(msg.PicURL)))
-			// 添加文本部分（如果用户同时发了文字）
-			if msg.Content != "" {
-				parts = append(parts, genai.Text(msg.Content))
-			}
-			return s.chatWithParts(string(msg.FromUserName), parts)
-		})
-	}
-	// 委托给默认处理方法
+	// 此方法在新的架构中已不再直接被调用，但为了满足接口定义仍需保留
+	// 实际的多媒体消息处理逻辑已迁移至 api/wx.go 和 Chat 方法中
 	simpleChat := SimpleChat{}
 	return simpleChat.HandleMediaMsg(msg)
 }
 
-// Chat 处理纯文本消息
+// Chat 处理纯文本和多媒体消息
 func (s *GeminiChat) Chat(userId string, msg string, imageURL ...string) string {
 	r, flag := DoAction(userId, msg)
 	if flag {
@@ -85,11 +74,19 @@ func (s *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 	}
 	return WithTimeChat(userId, msg, func(userId, msg string) string {
 		var parts []genai.Part
-		parts = append(parts, genai.Text(msg))
-		// 处理图片 URL
-		if len(imageURL) > 0 && imageURL[0] != "" {
-			parts = append(parts, genai.Part(genai.FileURI(imageURL[0])))
+		// 添加文本部分
+		if msg != "" {
+			parts = append(parts, genai.Text(msg))
 		}
+		// 添加图片部分（如果存在）
+		if len(imageURL) > 0 && imageURL[0] != "" {
+			parts = append(parts, genai.NewPartFromURI(imageURL[0], "image/jpeg"))
+		}
+		
+		if len(parts) == 0 {
+			return "无法处理空消息"
+		}
+		
 		return s.chatWithParts(userId, parts)
 	})
 }
