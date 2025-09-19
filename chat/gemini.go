@@ -1,3 +1,5 @@
+// File: gemini.go
+
 package chat
 
 import (
@@ -36,7 +38,6 @@ func (s *GeminiChat) toDbMsg(msg *genai.Content) db.Msg {
 		case genai.Blob:
 			// 将图片数据编码为 Base64 字符串
 			encodedData := base64.StdEncoding.EncodeToString(v.Data)
-			// 这里硬编码了MIME类型，因为数据库中没有存储
 			dbMsg.Parts = append(dbMsg.Parts, db.ContentPart{Type: "image", Data: encodedData, MIMEType: v.MIMEType})
 		}
 	}
@@ -74,7 +75,8 @@ func (s *GeminiChat) getModel(userId string) string {
 	return "gemini-1.5-flash-latest"
 }
 
-func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string {
+// NOTE: 修改 Chat 方法，增加了 voiceData 参数
+func (g *GeminiChat) Chat(userId string, msg string, imageURL string, voiceData []byte) string {
 	r, flag := DoAction(userId, msg)
 	if flag {
 		return r
@@ -95,9 +97,9 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 	var parts []genai.Part
 	
 	// 处理图片 URL
-	if len(imageURL) > 0 && imageURL[0] != "" {
+	if imageURL != "" {
 		// 1. 发起HTTP请求下载图片
-		resp, err := http.Get(imageURL[0])
+		resp, err := http.Get(imageURL)
 		if err != nil {
 			return "下载图片失败: " + err.Error()
 		}
@@ -123,6 +125,14 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 		// 6. 将图片数据添加到parts中
 		parts = append(parts, imagePart)
 	}
+
+	// NOTE: 新增代码，用于处理语音数据
+	if len(voiceData) > 0 {
+		mimeType := http.DetectContentType(voiceData)
+		voicePart := genai.FileData(mimeType, voiceData)
+		parts = append(parts, voicePart)
+	}
+
 
 	// 将文本消息添加到 parts 中，如果文本消息存在
 	if msg != "" {

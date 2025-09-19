@@ -1,7 +1,10 @@
+// File: wx.go
+
 package api
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -18,8 +21,8 @@ func Wx(rw http.ResponseWriter, req *http.Request) {
 	wc := wechat.NewWechat()
 	memory := cache.NewMemory()
 	cfg := &offConfig.Config{
-		AppID:     "",
-		AppSecret: "",
+		AppID:     config.GetWxAppId(),
+		AppSecret: config.GetWxAppSecret(),
 		Token:     config.GetWxToken(),
 		Cache:     memory,
 	}
@@ -32,7 +35,7 @@ func Wx(rw http.ResponseWriter, req *http.Request) {
 	// 设置接收消息的处理方法
 	server.SetMessageHandler(func(msg *message.MixMessage) *message.Reply {
 		// 回复消息：由 handleWxMessage 生成最终文本
-		replyMsg := handleWxMessage(msg)
+		replyMsg := handleWxMessage(msg, officialAccount)
 
 		// debug: 打印即将回复的纯文本长度，便于检查是否过长
 		fmt.Printf("Will reply to user %s, reply length=%d\n", string(msg.FromUserName), len(replyMsg))
@@ -67,7 +70,8 @@ func Wx(rw http.ResponseWriter, req *http.Request) {
 }
 
 // handleWxMessage 保持你原先的逻辑
-func handleWxMessage(msg *message.MixMessage) (replyMsg string) {
+// NOTE: 增加了对 officialAccount 参数的传递，以便在函数内获取 access token
+func handleWxMessage(msg *message.MixMessage, oa *wechat.OfficialAccount) (replyMsg string) {
 	msgType := msg.MsgType
 	msgContent := msg.Content
 	userId := string(msg.FromUserName)
@@ -98,9 +102,10 @@ func handleWxMessage(msg *message.MixMessage) (replyMsg string) {
 	// 如果不是命令，再根据用户当前选择的模式处理
 	bot := chat.GetChatBot(config.GetUserBotType(userId))
 
-	if msgType == message.MsgTypeText {
+	switch msgType {
+	case message.MsgTypeText:
 		replyMsg = bot.Chat(userId, msgContent)
-	} else if msgType == message.MsgTypeImage {
+	case message.MsgTypeImage:
 		// 检查当前机器人是否支持图片输入
 		if _, ok := bot.(*chat.KeywordChat); ok {
 			// 关键词模式，直接返回图片链接
@@ -116,14 +121,63 @@ func handleWxMessage(msg *message.MixMessage) (replyMsg string) {
 		}
 
 		// 如果当前是 Gemini 模式，则进行图片解读
-		geminiReply := bot.Chat(userId, "", msg.PicURL)
+		geminiReply := bot.Chat(userId, "", msg.PicURL, nil)
 		replyBuilder := strings.Builder{}
 		replyBuilder.WriteString("Gemini 图片解读：\n")
 		replyBuilder.WriteString(geminiReply)
 		replyMsg = replyBuilder.String()
-	} else {
+	case message.MsgTypeVoice:
+		// NOTE: 新增代码，用于处理语音消息
+		botType := config.GetUserBotType(userId)
+		if botType != config.Bot_Type_Gemini {
+			replyMsg = fmt.Sprintf("您当前的 %s 机器人只支持文本输入。如需语音解读，请使用 /gemini 切换到 Gemini 机器人。", botType)
+			return
+		}
+		
+		// 获取 access token
+		accessToken, err := oa.GetAccessToken()
+		if err != nil {
+			replyMsg = fmt.Sprintf("获取微信 access token 失败: %v", err)
+			return
+		}
+
+		// 下载语音文件
+		voiceData, err := downloadWxMedia(accessToken, msg.MediaID)
+		if err != nil {
+			replyMsg = fmt.Sprintf("下载语音文件失败: %v", err)
+			return
+		}
+
+		// 调用 Gemini 模型进行语音解读
+		geminiReply := bot.Chat(userId, "", "", voiceData)
+		replyBuilder := strings.Builder{}
+		replyBuilder.WriteString("Gemini 语音解读：\n")
+		replyBuilder.WriteString(geminiReply)
+		replyMsg = replyBuilder.String()
+	default:
 		replyMsg = bot.HandleMediaMsg(msg)
 	}
 
 	return
+}
+
+// NOTE: 新增函数，用于从微信服务器下载临时素材
+func downloadWxMedia(accessToken, mediaID string) ([]byte, error) {
+	url := fmt.Sprintf("https://api.weixin.qq.com/cgi-bin/media/get?access_token=%s&media_id=%s", accessToken, mediaID)
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("下载微信媒体文件失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("下载微信媒体文件失败，状态码: %d", resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("读取微信媒体数据失败: %w", err)
+	}
+
+	return data, nil
 }
