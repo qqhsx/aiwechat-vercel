@@ -13,6 +13,7 @@ import (
 	"github.com/silenceper/wechat/v2"
 	"github.com/silenceper/wechat/v2/cache"
 	offConfig "github.com/silenceper/wechat/v2/officialaccount/config"
+	"github.com/silenceper/wechat/v2/officialaccount" // NOTE: 增加对 officialaccount 包的导入
 	"github.com/silenceper/wechat/v2/officialaccount/message"
 )
 
@@ -70,7 +71,7 @@ func Wx(rw http.ResponseWriter, req *http.Request) {
 }
 
 // handleWxMessage 保持你原先的逻辑
-func handleWxMessage(msg *message.MixMessage, oa *wechat.OfficialAccount) (replyMsg string) {
+func handleWxMessage(msg *message.MixMessage, oa *officialaccount.OfficialAccount) (replyMsg string) {
 	msgType := msg.MsgType
 	msgContent := msg.Content
 	userId := string(msg.FromUserName)
