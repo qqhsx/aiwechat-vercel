@@ -70,7 +70,6 @@ func Wx(rw http.ResponseWriter, req *http.Request) {
 }
 
 // handleWxMessage 保持你原先的逻辑
-// NOTE: 增加了对 officialAccount 参数的传递，以便在函数内获取 access token
 func handleWxMessage(msg *message.MixMessage, oa *wechat.OfficialAccount) (replyMsg string) {
 	msgType := msg.MsgType
 	msgContent := msg.Content
@@ -121,12 +120,16 @@ func handleWxMessage(msg *message.MixMessage, oa *wechat.OfficialAccount) (reply
 		}
 
 		// 如果当前是 Gemini 模式，则进行图片解读
-		geminiBot := chat.GetGeminiChatBot()
-		geminiReply := geminiBot.Chat(userId, "", msg.PicURL)
-		replyBuilder := strings.Builder{}
-		replyBuilder.WriteString("Gemini 图片解读：\n")
-		replyBuilder.WriteString(geminiReply)
-		replyMsg = replyBuilder.String()
+		// 这里需要将bot断言为GeminiChat类型，因为GeminiChat.Chat方法签名与其他ChatBot不同
+		if geminiBot, ok := bot.(*chat.GeminiChat); ok {
+			geminiReply := geminiBot.Chat(userId, "", msg.PicURL)
+			replyBuilder := strings.Builder{}
+			replyBuilder.WriteString("Gemini 图片解读：\n")
+			replyBuilder.WriteString(geminiReply)
+			replyMsg = replyBuilder.String()
+		} else {
+			replyMsg = "无法处理图片，请确保已切换到Gemini机器人。"
+		}
 	case message.MsgTypeVoice:
 		// NOTE: 新增代码，用于处理语音消息
 		botType := config.GetUserBotType(userId)
@@ -134,7 +137,7 @@ func handleWxMessage(msg *message.MixMessage, oa *wechat.OfficialAccount) (reply
 			replyMsg = fmt.Sprintf("您当前的 %s 机器人只支持文本输入。如需语音解读，请使用 /gemini 切换到 Gemini 机器人。", botType)
 			return
 		}
-		
+
 		// 获取 access token
 		accessToken, err := oa.GetAccessToken()
 		if err != nil {
@@ -150,12 +153,16 @@ func handleWxMessage(msg *message.MixMessage, oa *wechat.OfficialAccount) (reply
 		}
 
 		// 调用 Gemini 模型进行语音解读
-		geminiBot := chat.GetGeminiChatBot()
-		geminiReply := geminiBot.ChatWithVoice(userId, voiceData)
-		replyBuilder := strings.Builder{}
-		replyBuilder.WriteString("Gemini 语音解读：\n")
-		replyBuilder.WriteString(geminiReply)
-		replyMsg = replyBuilder.String()
+		// 这里需要将bot断言为GeminiChat类型
+		if geminiBot, ok := bot.(*chat.GeminiChat); ok {
+			geminiReply := geminiBot.ChatWithVoice(userId, voiceData)
+			replyBuilder := strings.Builder{}
+			replyBuilder.WriteString("Gemini 语音解读：\n")
+			replyBuilder.WriteString(geminiReply)
+			replyMsg = replyBuilder.String()
+		} else {
+			replyMsg = "无法处理语音，请确保已切换到Gemini机器人。"
+		}
 	default:
 		replyMsg = bot.HandleMediaMsg(msg)
 	}

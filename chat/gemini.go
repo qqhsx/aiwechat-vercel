@@ -4,10 +4,10 @@ package chat
 
 import (
 	"context"
-	"io"
-	"net/http"
 	"encoding/base64"
 	"fmt"
+	"io"
+	"net/http"
 
 	"github.com/google/generative-ai-go/genai"
 	"github.com/pwh-pwh/aiwechat-vercel/config"
@@ -28,7 +28,7 @@ type GeminiChat struct {
 
 func (s *GeminiChat) toDbMsg(msg *genai.Content) db.Msg {
 	dbMsg := db.Msg{
-		Role: msg.Role,
+		Role:  msg.Role,
 		Parts: []db.ContentPart{},
 	}
 	for _, part := range msg.Parts {
@@ -46,7 +46,7 @@ func (s *GeminiChat) toDbMsg(msg *genai.Content) db.Msg {
 
 func (s *GeminiChat) toChatMsg(msg db.Msg) *genai.Content {
 	content := &genai.Content{
-		Role: msg.Role,
+		Role:  msg.Role,
 		Parts: []genai.Part{},
 	}
 	for _, part := range msg.Parts {
@@ -75,7 +75,7 @@ func (s *GeminiChat) getModel(userId string) string {
 	return "gemini-1.5-flash-latest"
 }
 
-// NOTE: 修改 Chat 方法签名，以匹配 BaseChat 接口
+// Chat 方法签名与 BaseChat 接口保持一致，用于处理文本和图片
 func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string {
 	r, flag := DoAction(userId, msg)
 	if flag {
@@ -95,7 +95,7 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 	cs := model.StartChat()
 
 	var parts []genai.Part
-	
+
 	// 处理图片 URL
 	if len(imageURL) > 0 && imageURL[0] != "" {
 		// 1. 发起HTTP请求下载图片
@@ -109,19 +109,19 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Sprintf("下载图片失败，状态码: %d", resp.StatusCode)
 		}
-	
+
 		// 3. 读取图片数据到内存
 		imageData, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return "读取图片数据失败: " + err.Error()
 		}
-		
+
 		// 4. 获取图片MIME类型
 		mimeType := http.DetectContentType(imageData)
-		
+
 		// 5. 创建genai.Blob
-		imagePart := genai.ImageData(mimeType, imageData) 
-	
+		imagePart := genai.ImageData(mimeType, imageData)
+
 		// 6. 将图片数据添加到parts中
 		parts = append(parts, imagePart)
 	}
@@ -133,7 +133,7 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 
 	var msgs = GetMsgListWithDb(config.Bot_Type_Gemini, userId, &genai.Content{
 		Parts: parts,
-		Role: GeminiUser,
+		Role:  GeminiUser,
 	}, g.toDbMsg, g.toChatMsg)
 
 	if len(msgs) > 1 {
@@ -154,7 +154,7 @@ func (g *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 
 	msgs = append(msgs, &genai.Content{
 		Parts: []genai.Part{genai.Text(responseText)},
-		Role: GeminiBot,
+		Role:  GeminiBot,
 	})
 
 	SaveMsgListWithDb(config.Bot_Type_Gemini, userId, msgs, g.toDbMsg)
@@ -173,25 +173,30 @@ func (g *GeminiChat) ChatWithVoice(userId string, voiceData []byte) string {
 	if g.maxTokens > 0 {
 		model.SetMaxOutputTokens(int32(g.maxTokens))
 	}
-	
+
 	mimeType := http.DetectContentType(voiceData)
-	voicePart := genai.Blob{MIMEType: mimeType, Data: voiceData}
+	// 根据 Gemini API 文档，audio/amr 和 audio/mpeg 都是支持的格式
+	if strings.Contains(mimeType, "audio") {
+		voicePart := genai.Blob{MIMEType: mimeType, Data: voiceData}
 
-	resp, err := model.GenerateContent(ctx, voicePart)
-	if err != nil {
-		return err.Error()
-	}
-
-	var responseText string
-	for _, part := range resp.Candidates[0].Content.Parts {
-		if text, ok := part.(genai.Text); ok {
-			responseText += string(text)
+		resp, err := model.GenerateContent(ctx, voicePart)
+		if err != nil {
+			return err.Error()
 		}
+
+		var responseText string
+		for _, part := range resp.Candidates[0].Content.Parts {
+			if text, ok := part.(genai.Text); ok {
+				responseText += string(text)
+			}
+		}
+
+		// 语音消息不保存对话历史，因为Gemini API对多模态输入有额外的token限制，
+		// 频繁使用可能导致请求失败。如果你想保存历史，需要修改toDbMsg和toChatMsg函数
+		// 以支持多模态内容。
+
+		return responseText
+	} else {
+		return fmt.Sprintf("不支持的音频格式: %s", mimeType)
 	}
-
-	// NOTE: 语音消息不保存对话历史，因为Gemini API对多模态输入有额外的token限制，
-	// 频繁使用可能导致请求失败。如果你想保存历史，需要修改toDbMsg和toChatMsg函数
-	// 以支持多模态内容。
-
-	return responseText
 }
