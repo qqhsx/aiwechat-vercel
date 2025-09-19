@@ -29,7 +29,7 @@ func (s *GeminiChat) toDbMsg(msg *genai.Content) db.Msg {
 		switch v := part.(type) {
 		case genai.Text:
 			parts = append(parts, db.ContentPart{Type: "text", Data: string(v)})
-		case *genai.FileData:
+		case genai.FileData:
 			parts = append(parts, db.ContentPart{Type: "image", Data: v.URI, MIMEType: v.MIMEType})
 		}
 	}
@@ -66,21 +66,19 @@ func (s *GeminiChat) Chat(userId string, msg string, imageURL ...string) string 
 	if flag {
 		return r
 	}
-	// WithTimeChat的第二个参数需要是string类型，所以这里将用户消息ID转换为字符串
-	cacheKey := fmt.Sprintf("%s:%s", userId, strconv.FormatInt(msg.MsgID, 10))
-	if msg != "" {
-		cacheKey = fmt.Sprintf("%s:%s", userId, msg)
-	} else if len(imageURL) > 0 && imageURL[0] != "" {
+	
+	cacheKey := fmt.Sprintf("%s:%s", userId, msg)
+	if msg == "" && len(imageURL) > 0 && imageURL[0] != "" {
 		cacheKey = fmt.Sprintf("%s:%s", userId, imageURL[0])
 	}
-
+	
 	return WithTimeChat(userId, cacheKey, func(userId, key string) string {
 		var parts []genai.Part
 		if msg != "" {
 			parts = append(parts, genai.Text(msg))
 		}
 		if len(imageURL) > 0 && imageURL[0] != "" {
-			parts = append(parts, genai.NewPartFromURI(imageURL[0]))
+			parts = append(parts, genai.NewPartFromURI(imageURL[0], "image/jpeg"))
 		}
 		
 		if len(parts) == 0 {
