@@ -339,7 +339,7 @@ func WithTimeChat(userId, msg string, f func(userId, msg string) string) string 
 	select {
 	case res := <-resChan:
 		return res
-	case <-time.After(20 * time.Second):
+	case <-time.After(10 * time.Second):
 		config.Cache.Store(userId+msg, <-resChan)
 		return ""
 	}
