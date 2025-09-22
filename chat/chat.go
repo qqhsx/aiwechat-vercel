@@ -138,7 +138,8 @@ func (s SimpleChat) HandleMediaMsg(msg *message.MixMessage) string {
 		return msg.PicURL
 	case message.MsgTypeEvent:
 		if msg.Event == message.EventSubscribe {
-			subText := config.GetWxSubscribeReply() + config.GetWxHelpReply()
+//			subText := config.GetWxSubscribeReply() + config.GetWxHelpReply()
+			subText := config.GetWxSubscribeReply()
 			if subText == "" {
 				subText = "哇，又有帅哥美女关注我啦😄"
 			}
