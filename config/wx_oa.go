@@ -42,6 +42,9 @@ const (
 	Wx_Todo_List = "/tl"
 
 	Wx_Coin = "/cb"
+	
+	// 新增电影搜索命令
+	Wx_Command_Movie = "/movie"
 
 	Wx_Command_AddMe = "/addme"
 )
@@ -69,7 +72,8 @@ func GetWxHelpReply() string {
 		helpMsg = "输入以下命令进行对话\n/help：查看帮助\n/gpt：与GPT对话\n/spark：与星火对话\n/qwen：与通义千问对话\n/gemini：与gemini对话\n/claude：与claude对话\n/keyword：切换到关键词回复模式\n/ai：切换到AI对话模式\n/addkeyword 关键词:回复内容：添加关键词\n/delkeyword 关键词：删除关键词\n/listkeywords：查看关键词列表\n" +
 			"/prompt 你的prompt: 设置system prompt\n/getpt: 获取当前设置prompt\n/cpt: 清除当前设置prompt\n" +
 			"/setmodel model: 设置自定义model\n/setmodel: 重置model为默认值\n/getmodel: 获取当前model\n" +
-			"/clear:清除历史对话\n" + "/ta 代办事项1:设置todo\n" + "/tl:获取代办列表\n" + "/td 2:删除索引代办事件\n" + "/cb 代币对:查询价格" +
+			"/clear:清除历史对话\n" + "/ta 代办事项1:设置todo\n" + "/tl:获取代办列表\n" + "/td 2:删除索引代办事件\n" + "/cb 代币对:查询价格\n" +
+			"/movie: 搜索电影\n" +
 			"/addme 密码: 认证用户"
 	}
 	return strings.ReplaceAll(helpMsg, "\\n", "\n")

@@ -75,6 +75,11 @@ var actionMap = map[string]func(param, userId string) string{
 
 	config.Wx_Coin:          GetCoin,
 	config.Wx_Command_AddMe: AddMe,
+	
+	// 新增电影搜索命令的处理函数
+	config.Wx_Command_Movie: func(param, userId string) string {
+		return client.GetMoviesByKeyword(param)
+	},
 }
 
 // isAdmin 检查用户是否为管理员
