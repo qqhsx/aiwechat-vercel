@@ -76,22 +76,7 @@ var actionMap = map[string]func(param, userId string) string{
 	config.Wx_Coin:          GetCoin,
 	config.Wx_Command_AddMe: AddMe,
 	
-	// 新增电影搜索命令的处理函数
-	config.Wx_Command_Movie: func(param, userId string) string {
-		// 优先检查 TMDb 是否有中国上映信息
-		isReleased, err := client.CheckChinaRelease(param)
-		if err != nil {
-			fmt.Printf("Error checking TMDb release: %v\n", err)
-			// 如果检查出错，仍然尝试使用旧的搜索方式
-			return client.GetMoviesByKeyword(param)
-		}
-		if isReleased {
-			return fmt.Sprintf("《%s》已在中国上映，请在正规渠道观看。", param)
-		}
-
-		// 如果没有中国上映信息，则使用旧的搜索方式
-		return client.GetMoviesByKeyword(param)
-	},
+	// Wx_Command_Movie 命令已被移除，其功能逻辑已迁移到 chat/keyword.go 文件中
 }
 
 // isAdmin 检查用户是否为管理员

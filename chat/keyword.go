@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/pwh-pwh/aiwechat-vercel/client"
@@ -14,12 +15,13 @@ type KeywordChat struct {
 }
 
 func (k *KeywordChat) Chat(userID string, msg string, imageURL ...string) string {
-	// 检查是否为指令，如果是则交给DoAction处理
+	// 1. 检查是否为指令，如果是则交给DoAction处理 (保留，确保 /ai, /help 等命令仍然有效)
 	r, flag := DoAction(userID, msg)
 	if flag {
 		return r
 	}
 
+	// 2. 尝试匹配数据库中的关键词
 	replies, err := db.GetKeywordReplies()
 	if err != nil {
 		return "获取关键词回复失败"
@@ -30,16 +32,34 @@ func (k *KeywordChat) Chat(userID string, msg string, imageURL ...string) string
 	for _, reply := range replies {
 		if matchMode == config.MatchModeFull {
 			if msg == reply.Keyword {
+				// 匹配成功，返回关键词回复
 				return k.processReply(userID, reply.Reply)
 			}
 		} else {
 			if strings.Contains(msg, reply.Keyword) {
+				// 匹配成功，返回关键词回复
 				return k.processReply(userID, reply.Reply)
 			}
 		}
 	}
 
-	return "未找到匹配的关键词，请尝试其他内容"
+	// 3. 关键词匹配失败，执行电影搜索（将用户输入视为电影名）
+	movieTitle := msg
+	
+	// 优先检查 TMDb 是否有中国上映信息
+	isReleased, err := client.CheckChinaRelease(movieTitle)
+	if err != nil {
+		// 如果检查 TMDb 发生错误，打印错误并回退到旧的搜索方式
+		fmt.Printf("Error checking TMDb release: %v\n", err)
+		return client.GetMoviesByKeyword(movieTitle)
+	}
+	
+	if isReleased {
+		return fmt.Sprintf("《%s》已在中国上映，请在正规渠道观看。", movieTitle)
+	}
+
+	// 如果没有中国上映信息，则使用旧的搜索方式
+	return client.GetMoviesByKeyword(movieTitle)
 }
 
 func (k *KeywordChat) HandleMediaMsg(msg *message.MixMessage) string {
